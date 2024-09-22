@@ -1,0 +1,7 @@
+aiAPI.py
+setup.py
+AI_API.egg-info/PKG-INFO
+AI_API.egg-info/SOURCES.txt
+AI_API.egg-info/dependency_links.txt
+AI_API.egg-info/requires.txt
+AI_API.egg-info/top_level.txt
