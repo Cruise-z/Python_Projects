@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+venv/
+
+VSCode/Python/Data_filter/FT_Data/Raw_Data/CS/articles/
+VSCode/Python/Data_filter/FT_Data/Raw_Data/CS/books/
+VSCode/Python/Data_filter/FT_Data/Raw_Data/CS/CS.json
+VSCode/Python/Data_filter/FT_Data/Raw_Data/nCS/fineweb_edu/
+VSCode/Python/Data_filter/FT_Data/Raw_Data/nCS/nCS.json
