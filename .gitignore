@@ -1,6 +1,6 @@
 __pycache__/
 *.py[cod]
-venv/
+**/.venv/
 
 VSCode/Python/Data_filter/FT_Data/Raw_Data/CS/articles/
 VSCode/Python/Data_filter/FT_Data/Raw_Data/CS/books/
