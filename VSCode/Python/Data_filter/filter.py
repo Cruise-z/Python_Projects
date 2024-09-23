@@ -2,11 +2,12 @@ from transformers import DistilBertForSequenceClassification, AutoTokenizer
 import torch
 
 # 加载训练好的模型和分词器
-model = DistilBertForSequenceClassification.from_pretrained("./results/checkpoint-6")
+model = DistilBertForSequenceClassification.from_pretrained("./results/checkpoint-15849")
 tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
 
 # 示例句子
 # 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0
+# 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0
 texts = [
     "Cybersecurity is crucial for protecting data.", 
     "Traveling allows individuals to experience different cultures, explore new landscapes, and gain fresh perspectives on the world.",

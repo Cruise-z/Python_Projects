@@ -50,6 +50,8 @@ training_args = TrainingArguments(
     per_device_train_batch_size=16,
     per_device_eval_batch_size=16,
     num_train_epochs=3,
+    warmup_ratio=0.1,
+    learning_rate=5e-5,
     logging_dir='./logs',
 )
 
