@@ -5,7 +5,7 @@ import os
 os.environ['http_proxy'] = 'http://127.0.0.1:7897'
 os.environ['https_proxy'] = 'http://127.0.0.1:7897'
 
-work_dir = './FT_Data/Raw_Data/nCS'
+work_dir = './gen_FT_Data/s1_Raw_Data/nCS'
 path = '/fineweb_edu'  # 下载文件位置
 
 # 分块下载数据

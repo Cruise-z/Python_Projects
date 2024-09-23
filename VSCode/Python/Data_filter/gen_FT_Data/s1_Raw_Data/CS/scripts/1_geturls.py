@@ -45,7 +45,7 @@ def articleurl(urlpage:str):
 
 ## TODO:获得所有文章链接
 def geturls():
-    work_dir = './FT_Data/Raw_Data/CS'
+    work_dir = './gen_FT_Data/s1_Raw_Data/CS'
     # 创建log.json文件记录错误日志
     log_dir = f"{work_dir}/log.json"
     if not os.path.exists(log_dir):
