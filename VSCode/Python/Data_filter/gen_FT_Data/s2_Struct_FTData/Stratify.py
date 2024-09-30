@@ -88,8 +88,8 @@ def convert_to_bert_format(data):
     return {"text": text_list, "label": label_list}
 
 
-CS_dir = './gen_FT_Data/Raw_Data/CS/CS.json'
-nCS_dir = './gen_FT_Data/Raw_Data/nCS/nCS.json'
+CS_dir = './gen_FT_Data/s1_Raw_Data/CS/CS.json'
+nCS_dir = './gen_FT_Data/s1_Raw_Data/nCS/nCS.json'
 mix_data_dir = './gen_FT_Data/'
 train_data_path = './FT_Data/'
 

@@ -96,6 +96,7 @@ def process(stage:str):
     website = 'https://www.darkreading.com'
     urls_dir = f"{work_dir}/urls.json"
     log_dir = f"{work_dir}/log.json"
+    susp_filesize = 100
     with open(urls_dir, 'r') as urlsfile:
         urlsdata = json.load(urlsfile)
     for item in urlsdata['urls']:
@@ -119,7 +120,8 @@ def process(stage:str):
             content = scrape(article_url)
         elif stage == 'finished':
         # !:爬虫结束后运行代码[选取已爬取过小文件重新爬取，确保'article_fail'表项为空]
-            if not os.path.isfile(file_path) or os.path.getsize(file_path) < 500:
+            susp_filesize = os.path.getsize(file_path)
+            if not os.path.isfile(file_path) or susp_filesize < 300:
                 content = scrape(article_url)
             else:
                 continue
@@ -129,8 +131,9 @@ def process(stage:str):
             with open(file_path, 'w') as file:  #覆写文件
                 file.write(article)
             # TODO:对文件大小判断是否属于可疑文件(未完整提取)
-            if os.path.getsize(file_path) > 50:
-                data['article_succ'].append(article_url)
+            if os.path.getsize(file_path) > susp_filesize:
+                if article_url not in data['article_succ']:
+                    data['article_succ'].append(article_url)
                 # TODO:成功提取后若文件处于可疑/失败列表中则移除
                 if article_url in data['article_susp']:
                     data['article_susp'].remove(article_url)
@@ -144,7 +147,8 @@ def process(stage:str):
                     data['article_succ'].remove(article_url)
                 print(f"文件'{item}'大小过小:{os.path.getsize(file_path)}B", important=True)
         else:
-            data['article_fail'].append(article_url)
+            if article_url not in data['article_fail']:
+                data['article_fail'].append(article_url)
             print(f"get article failed:{article_url}", important=True)
         with open(log_dir, 'r+') as logfile:
             logfile.seek(0)
@@ -215,5 +219,5 @@ def main(stdscr, Hlines, stage:str):
         stdscr.refresh()
 
 
-curses.wrapper(main, 9, 'scraping')
+curses.wrapper(main, 9, 'finished')
 

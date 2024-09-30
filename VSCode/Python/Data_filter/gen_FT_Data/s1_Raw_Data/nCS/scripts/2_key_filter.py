@@ -236,6 +236,8 @@ for i in range(600):
                     print(match)
                 else:
                     print("None")
+                    #TODO:[数据标准化]去除换行符制表符等，使之成为一段
+                    content = re.sub(r'\s+', ' ', content).strip()
                     texts_nCS.append({"text": content, "label": 0})
 
 # 将数据保存到JSON文件

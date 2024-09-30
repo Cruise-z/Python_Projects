@@ -13,7 +13,10 @@ for root, dirs, files in os.walk(work_dir+path):
         file_path = os.path.join(root, filename)  # 构造完整的文件路径
         if os.path.isfile(file_path):  # 确保是文件
             with open(file_path, 'r', encoding='utf-8') as file:  # 打开文件
-                content = file.read()  # 读取文件内容
+                article = file.read()  # 读取文件内容
+                #TODO:[数据标准化]只保留文本部分，将文章开头的标题删去
+                flag_index = article.find(": ")
+                content = article[flag_index+2:] if flag_index != -1 else article
                 texts_CS.append({"text": content, "label": 1})
 
 # 将数据保存到JSON文件
