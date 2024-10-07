@@ -1,0 +1,8 @@
+/articles/**
+!/articles/
+!/articles/.gitkeep
+
+/books/**
+!/books/
+!/books/.gitkeep
+

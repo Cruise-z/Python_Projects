@@ -1,14 +1,4 @@
-__pycache__/
-*.py[cod]
+**/__pycache__/
 **/.venv/
-*.json
-*.txt
+**/*.py[cod]
 
-VSCode/Python/Data_filter/FT_Data/Raw_Data/CS/articles/
-VSCode/Python/Data_filter/FT_Data/Raw_Data/CS/books/
-VSCode/Python/Data_filter/FT_Data/Raw_Data/nCS/fineweb_edu/
-VSCode/Python/Data_filter/results/
-VSCode/Python/Data_filter/logs/
-
-VSCode/Python/AI_AtkDef/exp1/data/
-VSCode/Python/AI_AtkDef/exp2/data/
