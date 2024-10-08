@@ -16,7 +16,7 @@ def process_large_json(file_path):
             elif prefix.endswith('.label'):  # 根据需要调整路径
                 print(Fore.BLUE + Back.YELLOW + Style.BRIGHT + f"Label:{value}")
 
-work_dir = './gen_FT_Data/s1_Raw_Data/nCS'
+work_dir = './1_Gen_FT_Data/s1_Raw_Data/nCS'
 
 # 调用函数处理文件
 process_large_json(os.path.join(work_dir, "nCS.json"))

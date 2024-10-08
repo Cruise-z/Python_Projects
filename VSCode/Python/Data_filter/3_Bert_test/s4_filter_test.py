@@ -30,6 +30,7 @@ texts = [
     "Volunteering in your community can foster connections and improve social cohesion. It provides an opportunity to give back while meeting new people and building relationships. Many find that community service enhances their sense of purpose and belonging."  # 0
 ]
 
+standard_labels = [1,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0]
 
 # 预处理输入数据
 inputs = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
@@ -45,8 +46,13 @@ probabilities = torch.nn.functional.softmax(logits, dim=-1)
 predicted_labels = torch.argmax(probabilities, dim=-1)
 
 # 标签到类别的映射
-label_map = {0: 'negative', 1: 'positive'}
+# label_map = {0: 'negative', 1: 'positive'}
+label_map = {0: 0, 1: 1}
 predicted_labels = [label_map[label.item()] for label in predicted_labels]
 
 print("Predicted categories:", predicted_labels)
 print("Probabilities:", probabilities)
+if(predicted_labels == standard_labels):
+    print("match!!!")
+else:
+    print("miss match")

@@ -10,10 +10,10 @@ os.environ['https_proxy'] = 'http://127.0.0.1:7897'
 # 
 
 # 训练数据导入
-with open("./FT_Data/train_data.json", "rb") as f:
+with open("./2_FT_Data/train_data.json", "rb") as f:
     train_data = json.load(f)
 
-with open("./FT_Data/eval_data.json", "rb") as f:
+with open("./2_FT_Data/eval_data.json", "rb") as f:
     eval_data = json.load(f)
 
 # 初始化 tokenizer

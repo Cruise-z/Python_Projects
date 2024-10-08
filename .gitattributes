@@ -1,2 +1,2 @@
-VSCode/Python/Data_filter/gen_FT_Data/s1_Raw_Data/nCS/nCS.json filter=lfs diff=lfs merge=lfs -text
-VSCode/Python/Data_filter/gen_FT_Data/s1_Raw_Data/CS/CS.json filter=lfs diff=lfs merge=lfs -text
+VSCode/Python/Data_filter/1_Gen_FT_Data/s1_Raw_Data/CS/CS.json filter=lfs diff=lfs merge=lfs -text
+VSCode/Python/Data_filter/1_Gen_FT_Data/s1_Raw_Data/nCS/nCS.json filter=lfs diff=lfs merge=lfs -text

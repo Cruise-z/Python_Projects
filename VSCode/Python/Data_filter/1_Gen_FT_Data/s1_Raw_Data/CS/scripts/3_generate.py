@@ -1,7 +1,7 @@
 import json
 import os
 
-work_dir = './gen_FT_Data/s1_Raw_Data/CS'
+work_dir = './1_Gen_FT_Data/s1_Raw_Data/CS'
 path = '/articles'  # 下载文件位置
 
 # 初始化列表来存储所有的文本数据

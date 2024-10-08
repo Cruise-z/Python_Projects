@@ -213,7 +213,7 @@ def contains_keywords(text, keywords):
             return keyword  # 返回匹配到的第一个关键词
     return None  # 如果没有匹配到任何关键词，则返回None
 
-work_dir = './gen_FT_Data/s1_Raw_Data/nCS'
+work_dir = './1_Gen_FT_Data/s1_Raw_Data/nCS'
 path = '/fineweb_edu'  # 下载文件位置
 
 # 初始化列表来存储所有的文本数据

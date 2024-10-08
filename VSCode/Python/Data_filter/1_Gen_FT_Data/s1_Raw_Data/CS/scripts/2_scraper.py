@@ -90,7 +90,7 @@ def test_url(url:str):
 
 ## TODO:主要运行逻辑
 def process(stage:str):
-    work_dir = './gen_FT_Data/s1_Raw_Data/CS'
+    work_dir = './1_Gen_FT_Data/s1_Raw_Data/CS'
     article_dir = work_dir + '/articles'
     # 网站主页面
     website = 'https://www.darkreading.com'
