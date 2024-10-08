@@ -30,10 +30,14 @@ texts = [
     "Volunteering in your community can foster connections and improve social cohesion. It provides an opportunity to give back while meeting new people and building relationships. Many find that community service enhances their sense of purpose and belonging."  # 0
 ]
 
+text = [
+    'Encryption is critical for safeguarding sensitive information from cybercriminals. By transforming data into unreadable formats, organizations can protect against unauthorized access. This fundamental practice is essential in maintaining the integrity and confidentiality of information.'
+]
+
 standard_labels = [1,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0]
 
 # 预处理输入数据
-inputs = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+inputs = tokenizer(text, padding=True, truncation=True, return_tensors="pt")
 
 # 进行预测
 model.eval()
