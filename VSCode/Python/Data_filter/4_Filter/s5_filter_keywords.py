@@ -184,14 +184,29 @@ keywords = [
 ]
 
 # 定义关键词过滤函数
-def keyword_filter(example):
-    text = example["content"]  # 假设要筛选的字段是 "content"
+def keyword_filter(example, field:str):
+    # print(type(example), example)  # 打印类型和内容
+    text = example[field]  # 要筛选的字段是 "text"
     # 遍历关键词列表
     for keyword in keywords:
         # 使用正则匹配关键词（确保是完整单词，忽略大小写）
         if re.search(r'\b' + re.escape(keyword) + r'\b', text, re.IGNORECASE):
             return True  # 找到匹配关键词时返回 True 保留该条记录
     return False  # 没有匹配到关键词则返回 False，过滤掉该记录
+
+def contains_keywords(text, keywords):
+    """
+    检查文本中是否包含任何简化和扩展关键词，并返回第一个匹配的完整关键词。
+    :param text: 待检查的文本
+    :param keywords: 网络安全相关的关键词集合
+    :return: 匹配到的第一个完整关键词，如果没有匹配到则返回None.
+    """
+    # 对每个关键词进行遍历，查找第一个匹配项
+    for keyword in keywords:
+        # 使用单词边界\b来确保完整的单词匹配
+        if re.search(r'\b' + re.escape(keyword) + r'\b', text, re.IGNORECASE):
+            return keyword  # 返回匹配到的第一个关键词
+    return None  # 如果没有匹配到任何关键词，则返回None
 
 def get_curl_command(offset, length):
     return [
@@ -211,7 +226,7 @@ target_host = '10.26.9.12'  # 内网服务器的IP或域名
 target_user = 'zhaorz'          # 内网服务器的用户名
 target_password = 'zhaoruizhi2024'  # 内网服务器的密码
 remote_path = '/data/fineweb_edu'  # 服务器上的文件路径
-local_file_path = './test.txt'  # 下载到本地的路径
+local_path = './4_Filter/test'  # 下载到本地的路径
 
 
 # 分块下载数据
@@ -223,12 +238,15 @@ length = 100  # 替换为你想要的偏移步长
 ssh_agent = paramiko.Agent()
 
 # 1. 加载数据集（使用流式加载，减少内存压力）
-ds = load_dataset("HuggingFaceFW/fineweb-edu", data_files="https://hf-mirror.com/datasets/HuggingFaceFW/fineweb-edu", streaming=True)
+spilt_name = "CC-MAIN-2013-20"
+# ds = load_dataset("HuggingFaceFW/fineweb-edu", spilt_name, split="train")
+ds = load_dataset("AlaaElhilo/Wikipedia_ComputerScience", split="train")
 
 # 2. 包装数据集的迭代器，添加 tqdm 进度条
-tqdm_ds = tqdm(ds, desc="Processing")
-
-
+total_count = len(ds)  # 适用于非流式加载
+print(f"总条数: {total_count}")
+tqdm_ds = tqdm(ds, total=total_count, desc="Processing")
+# tqdm_ds = tqdm(ds, desc="Processing")
 
 # 建立到跳板机的SSH隧道
 with SSHTunnelForwarder(
@@ -247,25 +265,79 @@ with SSHTunnelForwarder(
     # 使用SFTP下载文件
     sftp = client.open_sftp()
     
-    for i in range(3582, 5000):
-        offset = i*100
-        # 执行命令并捕获输出
-        curl_command = get_curl_command(offset, length)
-        result = subprocess.run(curl_command, capture_output=True, text=True)
-        # 检查命令是否执行成功
-        if result.returncode == 0:
-            # 将返回的 JSON 数据存储到变量 data 中
-            json_data = json.loads(result.stdout)  # 将输出解析为JSON
-            json_string = json.dumps(json_data)
-            # 通过 SFTP 打开远程文件进行写入
-            with sftp.file(os.path.join(remote_path, f"{i}.json"), 'w') as remote_file:
-                # 将 JSON 数据写入远程文件
-                remote_file.write(json_string.encode('utf-8'))
-                print(f"Data written to {remote_path}/{i}.json successfully!")
-        else:
-            print(f"命令执行失败，错误: {result.stderr}")
-            with open("./Raw_Data/log.txt", "a") as f:
-                f.write(f"{i}.json\n")
+    # 初始化参数
+    batch_size = 1000
+    filtered_data = []
+    total_written = 0
+    
+    # 3. 打开远程文件用于追加写入
+    with sftp.file(os.path.join(remote_path, f"{spilt_name}.jsonl"), 'a') as remote_file:
+        for example in tqdm_ds:
+            if keyword_filter(example, "Text"):
+                # 取出筛选后的数据，并新增 "label" 字段
+                filtered_item = {"text": example["Text"], "label": 0}
+                
+                # 将符合条件的数据加入到 `filtered_data` 列表
+                filtered_data.append(filtered_item)
+                
+                # 当 filtered_data 达到 batch_size 时，批量写入远程文件并清空
+                if len(filtered_data) >= batch_size:
+                    # 将数据转换为 JSON 行，并逐行写入远程文件
+                    for item in filtered_data:
+                        json_data = json.dumps(item, ensure_ascii=False)
+                        remote_file.write(json_data.encode('utf-8') + b'\n')
+                    
+                    # 清空 filtered_data 并更新统计
+                    filtered_data = []
+                    total_written += batch_size
+                    print(f"Written {total_written} entries to {remote_path}/{spilt_name}.jsonl")
+
+        # 处理最后一批不足 batch_size 的数据
+        if filtered_data:
+            for item in filtered_data:
+                json_data = json.dumps(item, ensure_ascii=False)
+                remote_file.write(json_data.encode('utf-8') + b'\n')
+            total_written += len(filtered_data)
+            print(f"Written the final {len(filtered_data)} entries to {remote_path}/{spilt_name}.jsonl")
+
+    print(f"Data written to {remote_path}/{spilt_name}.jsonl successfully! Total entries: {total_written}")
+    
+    # f_key = []
+    # for i in range(1, 10000):
+    #     offset = i*100
+    #     # 执行命令并捕获输出
+    #     curl_command = get_curl_command(offset, length)
+    #     result = subprocess.run(curl_command, capture_output=True, text=True)
+    #     # 检查命令是否执行成功
+    #     if result.returncode == 0:
+    #         # 将返回的 JSON 数据存储到变量 data 中
+    #         json_data = json.loads(result.stdout)  # 将输出解析为JSON
+    #         # 遍历 rows 数组
+    #         rows = json_data['rows']
+    #         for row in rows:
+    #             content = row['row']['text']
+    #             match = contains_keywords(content, keywords)
+    #             if match is not None:
+    #                 # print(match)
+    #                 #TODO:[数据标准化]去除换行符制表符等，使之成为一段
+    #                 # content = re.sub(r'\s+', ' ', content).strip()
+    #                 f_key.append({"text": content, "label": 0})
+    #             # else:
+    #                 # print("None")
+    #         json_string = json.dumps(f_key)
+    #         # 通过 SFTP 打开远程文件进行写入
+    #         with sftp.file(os.path.join(remote_path, f"{i}.json"), 'w') as remote_file:
+    #             # 将 JSON 数据写入远程文件
+    #             remote_file.write(json_string.encode('utf-8'))
+    #             print(f"Data written to {remote_path}/{i}.json successfully!")
+    #         # with open(os.path.join(local_path, f"{i}.json"), 'w') as local_file:
+    #         #     # 将 JSON 数据写入本地文件
+    #         #     local_file.write(json_string)
+    #         #     print(f"Data written to {local_path}/{i}.json successfully!")
+    #     else:
+    #         print(f"命令执行失败，错误: {result.stderr}")
+    #         with open("./4_Filter/log.txt", "a") as f:
+    #             f.write(f"{i}.json\n")
     
     # sftp.get(remote_file_path, local_file_path)  # 下载文件
     sftp.close()

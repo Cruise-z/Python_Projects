@@ -37,7 +37,7 @@ text = [
 standard_labels = [1,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0]
 
 # 预处理输入数据
-inputs = tokenizer(text, padding=True, truncation=True, return_tensors="pt")
+inputs = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
 
 # 进行预测
 model.eval()

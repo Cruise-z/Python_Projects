@@ -1,4 +1,8 @@
-from datasets import get_dataset_config_names
+from datasets import load_dataset
 
-configs = get_dataset_config_names("HuggingFaceFW/fineweb-edu")
-print(configs)
+# 清理缓存
+from datasets import set_caching_enabled, cleanup_cache_files
+
+# 打印删除的缓存大小
+deleted_size = cleanup_cache_files()
+print(f"Deleted cache size: {deleted_size} bytes")
