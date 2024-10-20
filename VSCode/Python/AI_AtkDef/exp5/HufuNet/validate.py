@@ -13,6 +13,7 @@ import torchvision
 import torchvision.transforms as transforms
 
 import os
+os.chdir("./exp5/HufuNet")
 import json
 import argparse
 
@@ -40,7 +41,7 @@ global error_history
 batch_size=32
 transform = transforms.Compose([transforms.ToTensor()])
 
-test_dataset = torchvision.datasets.MNIST(root="/home/lpz/MHL/NewHufu/data/", train=False,download = True, transform=transform)
+test_dataset = torchvision.datasets.MNIST(root="/home/zrz/MHL/NewHufu/data/", train=False,download = True, transform=transform)
 testloader = DataLoader(test_dataset, batch_size=batch_size)
 
 visualize_num=8

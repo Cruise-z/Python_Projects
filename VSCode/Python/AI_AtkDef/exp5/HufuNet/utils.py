@@ -513,12 +513,14 @@ def SSIM(input,output):
     return(get_SSIM(input.cuda(),output.cuda()))
 
 def calculate_threshold(model, rate):
+    # print(model)
     empty = torch.Tensor()
     if torch.cuda.is_available():
         empty = empty.cuda()
     pre_abs = expand_model(model, empty)
+    # print(pre_abs)
     weights = torch.abs(pre_abs)
-    # print(weights)
+    # print("weights = "+ str(weights))
     return np.percentile(weights.detach().cpu().numpy(), rate)
 
 def sparsify(model, prune_rate=50., get_prune_max=False):
