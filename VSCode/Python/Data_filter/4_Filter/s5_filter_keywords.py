@@ -2,6 +2,7 @@ import paramiko
 import subprocess
 import json
 import os
+os.chdir("./4_Filter")
 import re
 from sshtunnel import SSHTunnelForwarder
 from datasets import load_dataset
@@ -215,6 +216,128 @@ def get_curl_command(offset, length):
         f"https://datasets-server.huggingface.co/rows?dataset=HuggingFaceFW%2Ffineweb-edu&config=default&split=train&offset={offset}&length={length}"
     ]
 
+def remote(jump_host:str, jump_user:str, 
+           target_host:str, target_user:str, target_password:str, 
+           remote_path:str):
+    # 设置SSH客户端使用系统的SSH Agent
+    ssh_agent = paramiko.Agent()
+    
+    # 建立到跳板机的SSH隧道
+    with SSHTunnelForwarder(
+        (jump_host, 22),
+        ssh_username=jump_user,
+        ssh_pkey=ssh_agent.get_keys()[0],  # 使用SSH Agent提供的私钥
+        remote_bind_address=(target_host, 22)
+    ) as tunnel:
+        # 设置隧道本地端口
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        # 连接到内网服务器
+        client.connect('127.0.0.1', port=tunnel.local_bind_port, username=target_user, password=target_password)
+
+        # 使用SFTP下载文件
+        sftp = client.open_sftp()
+        
+        # 初始化参数
+        batch_size = 1000
+        filtered_data = []
+        total_written = 0
+        
+        # 3. 打开远程文件用于追加写入
+        with sftp.file(os.path.join(remote_path, f"{spilt_name}.jsonl"), 'a') as remote_file:
+            for example in tqdm_ds:
+                if keyword_filter(example, "text"):
+                    # 取出筛选后的数据，并新增 "label" 字段
+                    filtered_item = {"text": example["text"], "label": 0}
+                    
+                    # 将符合条件的数据加入到 `filtered_data` 列表
+                    filtered_data.append(filtered_item)
+                    
+                    # 当 filtered_data 达到 batch_size 时，批量写入远程文件并清空
+                    if len(filtered_data) >= batch_size:
+                        # 将数据转换为 JSON 行，并逐行写入远程文件
+                        for item in filtered_data:
+                            json_data = json.dumps(item, ensure_ascii=False)
+                            remote_file.write(json_data.encode('utf-8') + b'\n')
+                        
+                        # 清空 filtered_data 并更新统计
+                        filtered_data = []
+                        total_written += batch_size
+                        print(f"Written {total_written} entries to {remote_path}/{spilt_name}.jsonl")
+
+            # 处理最后一批不足 batch_size 的数据
+            if filtered_data:
+                for item in filtered_data:
+                    json_data = json.dumps(item, ensure_ascii=False)
+                    remote_file.write(json_data.encode('utf-8') + b'\n')
+                total_written += len(filtered_data)
+                print(f"Written the final {len(filtered_data)} entries to {remote_path}/{spilt_name}.jsonl")
+
+        print(f"Data written to {remote_path}/{spilt_name}.jsonl successfully! Total entries: {total_written}")
+        sftp.close()
+        client.close()
+
+
+def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, batch_size:int):
+    # 初始化参数
+    batch_size = batch_size
+    filtered_data = []
+    total_written = 0
+    
+    os.makedirs(local_path, exist_ok=True)
+    log_file = os.path.join(local_path, 'log.txt')
+    
+    # 读取上次中断的位置
+    start_index = 0
+    if os.path.exists(log_file):
+        with open(log_file, 'r') as log:
+            start_index = int(log.read().strip())
+
+    # 打开文件用于追加写入
+    for idx, example in enumerate(tqdm_ds):
+        if idx < start_index:
+            continue  # 跳过已处理的索引
+        
+        if keyword_filter(example, "text"):
+            # 取出筛选后的数据，并新增 "label" 字段
+            filtered_item = {"text": example["text"], "label": 0}
+                    
+            # 将符合条件的数据加入到 `filtered_data` 列表
+            filtered_data.append(filtered_item)
+                    
+            # 当 filtered_data 达到 batch_size 时，批量写入文件并清空
+            if len(filtered_data) >= batch_size:
+                # 将数据转换为 JSON 行，并逐行写入远程文件
+                for item in filtered_data:
+                    json_data = json.dumps(item, ensure_ascii=False)
+                    with open(os.path.join(local_path, f"{spilt_name}.jsonl"), 'a') as file:
+                        file.write(json_data + '\n')
+                        
+                # 清空 filtered_data 并更新统计
+                filtered_data = []
+                total_written += batch_size
+                print(f"Written {total_written} entries to {local_path}/{spilt_name}.jsonl")
+                
+                # 更新日志文件
+                with open(log_file, 'w') as log:
+                    log.write(str(idx + 1))
+
+    # 处理最后一批不足 batch_size 的数据
+    if filtered_data:
+        for item in filtered_data:
+            json_data = json.dumps(item, ensure_ascii=False)
+            with open(os.path.join(local_path, f"{spilt_name}.jsonl"), 'a') as file:
+                file.write(json_data + '\n')
+        total_written += len(filtered_data)
+        print(f"Written the final {len(filtered_data)} entries to {local_path}/{spilt_name}.jsonl")
+        
+    # 更新日志文件
+    with open(log_file, 'w') as log:
+        log.write(str(len(tqdm_ds)))  # 记录总数
+
+    print(f"Data written to {local_path}/{spilt_name}.jsonl successfully! Total entries: {total_written}")
+
 
 # 跳板机的配置
 jump_host = '47.94.175.96'      # 跳板机的IP或域名
@@ -226,21 +349,17 @@ target_host = '10.26.9.12'  # 内网服务器的IP或域名
 target_user = 'zhaorz'          # 内网服务器的用户名
 target_password = 'zhaoruizhi2024'  # 内网服务器的密码
 remote_path = '/data/fineweb_edu'  # 服务器上的文件路径
-local_path = './4_Filter/test'  # 下载到本地的路径
-
+local_path = './data'  # 下载到本地的路径
 
 # 分块下载数据
 # 定义 curl 命令的 URL
 offset = 0  # 替换为你想要的初始偏移量
 length = 100  # 替换为你想要的偏移步长
 
-# 设置SSH客户端使用系统的SSH Agent
-ssh_agent = paramiko.Agent()
-
 # 1. 加载数据集（使用流式加载，减少内存压力）
 spilt_name = "CC-MAIN-2013-20"
-# ds = load_dataset("HuggingFaceFW/fineweb-edu", spilt_name, split="train")
-ds = load_dataset("AlaaElhilo/Wikipedia_ComputerScience", split="train")
+ds = load_dataset("HuggingFaceFW/fineweb-edu", spilt_name, split="train")
+# ds = load_dataset("AlaaElhilo/Wikipedia_ComputerScience", split="train")
 
 # 2. 包装数据集的迭代器，添加 tqdm 进度条
 total_count = len(ds)  # 适用于非流式加载
@@ -248,99 +367,4 @@ print(f"总条数: {total_count}")
 tqdm_ds = tqdm(ds, total=total_count, desc="Processing")
 # tqdm_ds = tqdm(ds, desc="Processing")
 
-# 建立到跳板机的SSH隧道
-with SSHTunnelForwarder(
-    (jump_host, 22),
-    ssh_username=jump_user,
-    ssh_pkey=ssh_agent.get_keys()[0],  # 使用SSH Agent提供的私钥
-    remote_bind_address=(target_host, 22)
-) as tunnel:
-    # 设置隧道本地端口
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
-    # 连接到内网服务器
-    client.connect('127.0.0.1', port=tunnel.local_bind_port, username=target_user, password=target_password)
-
-    # 使用SFTP下载文件
-    sftp = client.open_sftp()
-    
-    # 初始化参数
-    batch_size = 1000
-    filtered_data = []
-    total_written = 0
-    
-    # 3. 打开远程文件用于追加写入
-    with sftp.file(os.path.join(remote_path, f"{spilt_name}.jsonl"), 'a') as remote_file:
-        for example in tqdm_ds:
-            if keyword_filter(example, "Text"):
-                # 取出筛选后的数据，并新增 "label" 字段
-                filtered_item = {"text": example["Text"], "label": 0}
-                
-                # 将符合条件的数据加入到 `filtered_data` 列表
-                filtered_data.append(filtered_item)
-                
-                # 当 filtered_data 达到 batch_size 时，批量写入远程文件并清空
-                if len(filtered_data) >= batch_size:
-                    # 将数据转换为 JSON 行，并逐行写入远程文件
-                    for item in filtered_data:
-                        json_data = json.dumps(item, ensure_ascii=False)
-                        remote_file.write(json_data.encode('utf-8') + b'\n')
-                    
-                    # 清空 filtered_data 并更新统计
-                    filtered_data = []
-                    total_written += batch_size
-                    print(f"Written {total_written} entries to {remote_path}/{spilt_name}.jsonl")
-
-        # 处理最后一批不足 batch_size 的数据
-        if filtered_data:
-            for item in filtered_data:
-                json_data = json.dumps(item, ensure_ascii=False)
-                remote_file.write(json_data.encode('utf-8') + b'\n')
-            total_written += len(filtered_data)
-            print(f"Written the final {len(filtered_data)} entries to {remote_path}/{spilt_name}.jsonl")
-
-    print(f"Data written to {remote_path}/{spilt_name}.jsonl successfully! Total entries: {total_written}")
-    
-    # f_key = []
-    # for i in range(1, 10000):
-    #     offset = i*100
-    #     # 执行命令并捕获输出
-    #     curl_command = get_curl_command(offset, length)
-    #     result = subprocess.run(curl_command, capture_output=True, text=True)
-    #     # 检查命令是否执行成功
-    #     if result.returncode == 0:
-    #         # 将返回的 JSON 数据存储到变量 data 中
-    #         json_data = json.loads(result.stdout)  # 将输出解析为JSON
-    #         # 遍历 rows 数组
-    #         rows = json_data['rows']
-    #         for row in rows:
-    #             content = row['row']['text']
-    #             match = contains_keywords(content, keywords)
-    #             if match is not None:
-    #                 # print(match)
-    #                 #TODO:[数据标准化]去除换行符制表符等，使之成为一段
-    #                 # content = re.sub(r'\s+', ' ', content).strip()
-    #                 f_key.append({"text": content, "label": 0})
-    #             # else:
-    #                 # print("None")
-    #         json_string = json.dumps(f_key)
-    #         # 通过 SFTP 打开远程文件进行写入
-    #         with sftp.file(os.path.join(remote_path, f"{i}.json"), 'w') as remote_file:
-    #             # 将 JSON 数据写入远程文件
-    #             remote_file.write(json_string.encode('utf-8'))
-    #             print(f"Data written to {remote_path}/{i}.json successfully!")
-    #         # with open(os.path.join(local_path, f"{i}.json"), 'w') as local_file:
-    #         #     # 将 JSON 数据写入本地文件
-    #         #     local_file.write(json_string)
-    #         #     print(f"Data written to {local_path}/{i}.json successfully!")
-    #     else:
-    #         print(f"命令执行失败，错误: {result.stderr}")
-    #         with open("./4_Filter/log.txt", "a") as f:
-    #             f.write(f"{i}.json\n")
-    
-    # sftp.get(remote_file_path, local_file_path)  # 下载文件
-    sftp.close()
-    client.close()
-
-# print("文件下载完成")
+local(tqdm_ds, local_path, spilt_name, 200)
