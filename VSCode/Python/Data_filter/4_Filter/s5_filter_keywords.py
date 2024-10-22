@@ -278,6 +278,18 @@ def remote(jump_host:str, jump_user:str,
         sftp.close()
         client.close()
 
+def write_to_temp_file(temp_file: str, filtered_data: list):
+    """将筛选后的数据写入临时文件"""
+    with open(temp_file, 'w', encoding='utf-8') as file:
+        for item in filtered_data:
+            json_data = json.dumps(item, ensure_ascii=False)
+            file.write(json_data + '\n')
+
+def append_temp_to_target(temp_file: str, target_file: str):
+    """将临时文件的内容追加到目标文件"""
+    with open(temp_file, 'r', encoding='utf-8') as temp_file_read:
+        with open(target_file, 'a', encoding='utf-8') as target:
+            target.write(temp_file_read.read())
 
 def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, batch_size:int):
     # 初始化参数
@@ -287,6 +299,8 @@ def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, batch_size:int):
     
     os.makedirs(local_path, exist_ok=True)
     log_file = os.path.join(local_path, 'log.txt')
+    temp_file = os.path.join(local_path, f"{spilt_name}.jsonl.tmp")
+    target_file = os.path.join(local_path, f"{spilt_name}.jsonl")
     
     # 读取上次中断的位置
     start_index = 0
@@ -308,30 +322,31 @@ def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, batch_size:int):
                     
             # 当 filtered_data 达到 batch_size 时，批量写入文件并清空
             if len(filtered_data) >= batch_size:
-                # 将数据转换为 JSON 行，并逐行写入远程文件
-                for item in filtered_data:
-                    json_data = json.dumps(item, ensure_ascii=False)
-                    with open(os.path.join(local_path, f"{spilt_name}.jsonl"), 'a') as file:
-                        file.write(json_data + '\n')
+                # 将数据转换为 JSON 行，并逐行写入临时文件
+                write_to_temp_file(temp_file, filtered_data)
                         
                 # 清空 filtered_data 并更新统计
                 filtered_data = []
                 total_written += batch_size
                 print(f"Written {total_written} entries to {local_path}/{spilt_name}.jsonl")
                 
+                #TODO:写入目标文件并更新日志
+                # 将临时文件的内容追加到目标文件
+                append_temp_to_target(temp_file, target_file)
                 # 更新日志文件
                 with open(log_file, 'w') as log:
                     log.write(str(idx + 1))
 
     # 处理最后一批不足 batch_size 的数据
     if filtered_data:
-        for item in filtered_data:
-            json_data = json.dumps(item, ensure_ascii=False)
-            with open(os.path.join(local_path, f"{spilt_name}.jsonl"), 'a') as file:
-                file.write(json_data + '\n')
+        # 将数据转换为 JSON 行，并逐行写入临时文件
+        write_to_temp_file(temp_file, filtered_data)
+                
         total_written += len(filtered_data)
         print(f"Written the final {len(filtered_data)} entries to {local_path}/{spilt_name}.jsonl")
         
+    # 将临时文件的内容追加到目标文件
+    append_temp_to_target(temp_file, target_file)
     # 更新日志文件
     with open(log_file, 'w') as log:
         log.write(str(len(tqdm_ds)))  # 记录总数
@@ -367,4 +382,4 @@ print(f"总条数: {total_count}")
 tqdm_ds = tqdm(ds, total=total_count, desc="Processing")
 # tqdm_ds = tqdm(ds, desc="Processing")
 
-local(tqdm_ds, local_path, spilt_name, 200)
+local(tqdm_ds, local_path, spilt_name, 1000)
