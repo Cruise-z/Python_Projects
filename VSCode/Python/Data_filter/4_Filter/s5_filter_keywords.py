@@ -1,15 +1,33 @@
+import os
+import configparser
+os.chdir("./4_Filter")
+
+# 创建配置解析器
+config = configparser.ConfigParser()
+# 读取 .ini 文件
+config.read('config.ini')
+jump_host = config['default']['jump_host']
+jump_user = config['default']['jump_user']
+target_host = config['default']['target_host']
+target_user = config['default']['target_user']
+target_passwd = config['default']['target_passwd']
+remote_path = config['default']['remote_path']
+local_path = config['default']['local_path']
+
+os.environ['http_proxy'] = config['proxy']['http_proxy']
+os.environ['https_proxy'] = config['proxy']['https_proxy']
+#TODO:服务器配置环境变量
+os.environ['HF_ENDPOINT'] = config['proxy']['hf_mirror']
+# os.environ['HF_DATASETS_CACHE'] = remote_path
+
 import paramiko
 import subprocess
 import json
-import os
-os.chdir("./4_Filter")
 import re
 from sshtunnel import SSHTunnelForwarder
 from datasets import load_dataset
 from tqdm import tqdm  # 导入 tqdm 库
 
-os.environ['http_proxy'] = 'http://127.0.0.1:7897'
-os.environ['https_proxy'] = 'http://127.0.0.1:7897'
 
 keywords = [
     "Cybersecurity", "password", 
@@ -354,26 +372,14 @@ def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, batch_size:int):
     print(f"Data written to {local_path}/{spilt_name}.jsonl successfully! Total entries: {total_written}")
 
 
-# 跳板机的配置
-jump_host = '47.94.175.96'      # 跳板机的IP或域名
-jump_user = 'public_jumphost'            # 跳板机的用户名
-#jump_password = 'jump_password'    # 跳板机的密码
-
-# 内网服务器的配置
-target_host = '10.26.9.12'  # 内网服务器的IP或域名
-target_user = 'zhaorz'          # 内网服务器的用户名
-target_password = 'zhaoruizhi2024'  # 内网服务器的密码
-remote_path = '/data/fineweb_edu'  # 服务器上的文件路径
-local_path = './data'  # 下载到本地的路径
-
 # 分块下载数据
 # 定义 curl 命令的 URL
 offset = 0  # 替换为你想要的初始偏移量
 length = 100  # 替换为你想要的偏移步长
 
-# 1. 加载数据集（使用流式加载，减少内存压力）
+# 1. 加载数据集（直接加载, 通过tqdm显示总进度）
 spilt_name = "CC-MAIN-2013-20"
-ds = load_dataset("HuggingFaceFW/fineweb-edu", spilt_name, split="train")
+ds = load_dataset(path="HuggingFaceFW/fineweb-edu", name=spilt_name, split="train")
 # ds = load_dataset("AlaaElhilo/Wikipedia_ComputerScience", split="train")
 
 # 2. 包装数据集的迭代器，添加 tqdm 进度条
