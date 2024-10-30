@@ -1,6 +1,9 @@
 import os
 import configparser
+#TODO:本地设置当前目录
 os.chdir("./4_Filter")
+#TODO:服务器上设置当前目录
+# os.chdir("./")
 
 # 创建配置解析器
 config = configparser.ConfigParser()
@@ -11,14 +14,18 @@ jump_user = config['default']['jump_user']
 target_host = config['default']['target_host']
 target_user = config['default']['target_user']
 target_passwd = config['default']['target_passwd']
-remote_path = config['default']['remote_path']
+remote_load_path = config['default']['remote_load_path']
+remote_cache_path = config['default']['remote_cache_path']
 local_path = config['default']['local_path']
 
 os.environ['http_proxy'] = config['proxy']['http_proxy']
 os.environ['https_proxy'] = config['proxy']['https_proxy']
-#TODO:服务器配置环境变量
+#!:服务器配置环境变量
 os.environ['HF_ENDPOINT'] = config['proxy']['hf_mirror']
-# os.environ['HF_DATASETS_CACHE'] = remote_path
+#TODO:设置全局缓存目录，包括模型、数据集及其他相关缓存文件。
+# os.environ['HF_HOME'] = remote_cache_path
+#TODO:指定Hugging_Face数据集的缓存目录，也就是下载的数据集文件存放的位置。
+# os.environ['HF_DATASETS_CACHE'] = remote_load_path
 
 import paramiko
 import subprocess
@@ -379,7 +386,9 @@ length = 100  # 替换为你想要的偏移步长
 
 # 1. 加载数据集（直接加载, 通过tqdm显示总进度）
 spilt_name = "CC-MAIN-2013-20"
-ds = load_dataset(path="HuggingFaceFW/fineweb-edu", name=spilt_name, split="train")
+ds = load_dataset(path="HuggingFaceFW/fineweb-edu",
+                  name=spilt_name, 
+                  split="train")
 # ds = load_dataset("AlaaElhilo/Wikipedia_ComputerScience", split="train")
 
 # 2. 包装数据集的迭代器，添加 tqdm 进度条
