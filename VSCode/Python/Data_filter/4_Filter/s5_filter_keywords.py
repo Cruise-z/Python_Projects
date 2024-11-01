@@ -316,14 +316,14 @@ def append_temp_to_target(temp_file: str, target_file: str):
         with open(target_file, 'a', encoding='utf-8') as target:
             target.write(temp_file_read.read())
 
-def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, batch_size:int):
+def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, log_file_name:str, batch_size:int):
     # 初始化参数
     batch_size = batch_size
     filtered_data = []
     total_written = 0
     
     os.makedirs(local_path, exist_ok=True)
-    log_file = os.path.join(local_path, 'log.txt')
+    log_file = os.path.join(local_path, log_file_name)
     temp_file = os.path.join(local_path, f"{spilt_name}.jsonl.tmp")
     target_file = os.path.join(local_path, f"{spilt_name}.jsonl")
     
@@ -397,4 +397,4 @@ print(f"总条数: {total_count}")
 tqdm_ds = tqdm(ds, total=total_count, desc="Processing")
 # tqdm_ds = tqdm(ds, desc="Processing")
 
-local(tqdm_ds, local_path, spilt_name, 1000)
+local(tqdm_ds, local_path, spilt_name, log_file_name='log.txt', batch_size=1000)
