@@ -324,8 +324,8 @@ def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, log_file_name:str, batch
     
     os.makedirs(local_path, exist_ok=True)
     log_file = os.path.join(local_path, log_file_name)
-    temp_file = os.path.join(local_path, f"{spilt_name}.jsonl.tmp")
-    target_file = os.path.join(local_path, f"{spilt_name}.jsonl")
+    temp_file = os.path.join(local_path, f"{spilt_name}_kw.jsonl.tmp")
+    target_file = os.path.join(local_path, f"{spilt_name}_kw.jsonl")
     
     # 读取上次中断的位置
     start_index = 0
@@ -353,7 +353,7 @@ def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, log_file_name:str, batch
                 # 清空 filtered_data 并更新统计
                 filtered_data = []
                 total_written += batch_size
-                print(f"Written {total_written} entries to {local_path}/{spilt_name}.jsonl")
+                print(f"Written {total_written} entries to {local_path}/{spilt_name}_kw.jsonl")
                 
                 #TODO:写入目标文件并更新日志
                 # 将临时文件的内容追加到目标文件
@@ -368,7 +368,7 @@ def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, log_file_name:str, batch
         write_to_temp_file(temp_file, filtered_data)
                 
         total_written += len(filtered_data)
-        print(f"Written the final {len(filtered_data)} entries to {local_path}/{spilt_name}.jsonl")
+        print(f"Written the final {len(filtered_data)} entries to {local_path}/{spilt_name}_kw.jsonl")
         
     # 将临时文件的内容追加到目标文件
     append_temp_to_target(temp_file, target_file)
@@ -376,7 +376,7 @@ def local(tqdm_ds:tqdm, local_path:str, spilt_name:str, log_file_name:str, batch
     with open(log_file, 'w') as log:
         log.write(str(len(tqdm_ds)))  # 记录总数
 
-    print(f"Data written to {local_path}/{spilt_name}.jsonl successfully! Total entries: {total_written}")
+    print(f"Data written to {local_path}/{spilt_name}_kw.jsonl successfully! Total entries: {total_written}")
 
 
 # 分块下载数据
@@ -397,4 +397,4 @@ print(f"总条数: {total_count}")
 tqdm_ds = tqdm(ds, total=total_count, desc="Processing")
 # tqdm_ds = tqdm(ds, desc="Processing")
 
-local(tqdm_ds, local_path, spilt_name, log_file_name='log.txt', batch_size=1000)
+local(tqdm_ds, local_path, spilt_name, log_file_name='log_kw.txt', batch_size=1000)
