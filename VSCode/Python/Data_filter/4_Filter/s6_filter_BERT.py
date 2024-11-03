@@ -76,7 +76,7 @@ def local(model, tokenizer,
             item = json.loads(line)
             label = filter(model, tokenizer, item['text'])
             if label == [1]:
-                filtered_data.append({"text": item['text'], "label": label})
+                filtered_data.append({"text": item['text'], "label": label[0]})
             
                 # 如果达到批次大小，则进行预测
                 if len(filtered_data) == batch_size:
@@ -134,5 +134,5 @@ batch_size = 100
 
 spilt_name = "CC-MAIN-2013-20"
 
-local(model, tokenizer, spilt_name, batch_size, './results', "log_Bert.txt")
+local(model, tokenizer, spilt_name, batch_size, './data/results', "log_Bert.txt")
     
