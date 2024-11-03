@@ -46,15 +46,16 @@ def count_lines_in_jsonl(file_path):
 
 def local(model, tokenizer, 
           spilt_name:str, batch_size:int, 
-          log_file_name:str):
+          result_dir:str, log_file_name:str):
     filtered_data = []
     total_written = 0
     
-    os.makedirs(local_path, exist_ok=True)
-    log_file = os.path.join(local_path, log_file_name)
-    temp_file = os.path.join(local_path, f"{spilt_name}_Bert.jsonl.tmp")
-    target_file = os.path.join(local_path, f"{spilt_name}_Bert.jsonl")
-    jsonl_kw_path = os.path.join(local_path, f"{spilt_name}_kw.jsonl")
+    os.makedirs(local_dir, exist_ok=True)
+    os.makedirs(result_dir, exist_ok=True)
+    jsonl_kw_path = os.path.join(local_dir, f"{spilt_name}_kw.jsonl")
+    log_file = os.path.join(local_dir, log_file_name)
+    temp_file = os.path.join(local_dir, f"{spilt_name}_Bert.jsonl.tmp")
+    target_file = os.path.join(result_dir, f"{spilt_name}_Bert.jsonl")
     
     model.eval()
     
@@ -122,7 +123,7 @@ target_user = config['default']['target_user']
 target_passwd = config['default']['target_passwd']
 remote_load_path = config['default']['remote_load_path']
 remote_cache_path = config['default']['remote_cache_path']
-local_path = config['default']['local_path']
+local_dir = config['default']['local_dir']
 
 # 加载训练好的模型和分词器
 model = DistilBertForSequenceClassification.from_pretrained("../results/checkpoint-15849")
@@ -133,5 +134,5 @@ batch_size = 100
 
 spilt_name = "CC-MAIN-2013-20"
 
-local(model, tokenizer, spilt_name, batch_size, "log_Bert.txt")
+local(model, tokenizer, spilt_name, batch_size, './results', "log_Bert.txt")
     
