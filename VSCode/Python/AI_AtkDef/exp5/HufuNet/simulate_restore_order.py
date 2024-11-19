@@ -61,7 +61,7 @@ correct = 0
 error=0 # record the number of error filters
 total=0 # record the number of total filters
 
-for n,name in enumerate(layer_names[:8]):
+for n,name in enumerate(layer_names[:7]):
     print(name)
     (a,b,c,d) = Model_10['net'][name].size() # a:out_channel  b:in_channel
     print(a,b,c,d)
@@ -69,12 +69,12 @@ for n,name in enumerate(layer_names[:8]):
     list10 = []
     list50 = []
     
-    cur_layer = Model_50['net']['module.'+name].clone() # store current layer's parameters, prepare to replace 
-    nxt_layer = Model_50['net']['module.'+layer_names[(n+1)]].clone()
+    cur_layer = Model_50['net'][name].clone() # store current layer's parameters, prepare to replace 
+    nxt_layer = Model_50['net'][layer_names[(n+1)]].clone()
     
     for i in range(a):
         U10, sig10, V10 = np.linalg.svd(Model_10['net'][name].cpu().numpy()[i,:,:,:].reshape(c*d,-1))
-        U50, sig50, V50 = np.linalg.svd(Model_50['net']['module.'+name].cpu().numpy()[i,:,:,:].reshape(c*d,-1))
+        U50, sig50, V50 = np.linalg.svd(Model_50['net'][name].cpu().numpy()[i,:,:,:].reshape(c*d,-1))
         # list10.append(np.vstack((U10[:,:min(a,c*d)],V10.T[:min(a,c*d),:])).flatten('f'))
         # list50.append(np.vstack((U50[:,:min(a,c*d)],V50.T[:min(a,c*d),:])).flatten('f'))
         list10.append(sig10)
@@ -105,11 +105,11 @@ for n,name in enumerate(layer_names[:8]):
                 if (i+1)%a==tmp[k]:
                     correct+=1
                 #error+=1
-                    Model_50['net']['module.'+name][tmp[k],:,:,:] = cur_layer[i,:,:,:]
+                    Model_50['net'][name][tmp[k],:,:,:] = cur_layer[i,:,:,:]
                     if n==7:
-                        Model_50['net']['module.'+layer_names[n+1]][:,tmp[k]] = nxt_layer[:,i]
+                        Model_50['net'][layer_names[n+1]][:,tmp[k]] = nxt_layer[:,i]
                     else:
-                        Model_50['net']['module.'+layer_names[n+1]][:,tmp[k],:,:] = nxt_layer[:,i,:,:]
+                        Model_50['net'][layer_names[n+1]][:,tmp[k],:,:] = nxt_layer[:,i,:,:]
                     break
             k+=1
     print(correct,a)

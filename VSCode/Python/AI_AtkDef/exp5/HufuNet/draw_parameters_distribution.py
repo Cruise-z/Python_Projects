@@ -10,6 +10,7 @@ import numpy as np
 import torchvision.transforms as transforms
 
 import os
+os.chdir("./exp5/HufuNet")
 import json
 import random
 import argparse
@@ -18,6 +19,7 @@ import hashlib
 from models import *
 from utils  import *
 from tqdm   import tqdm
+import sys
 
 torch.backends.cudnn.enabled = False
 
@@ -29,7 +31,7 @@ def cos_sim(x, y):
     d1 = np.dot(x_,y_)/ np.where(tmp!=0,tmp,1e-20)
     return 0.5+d1/2.0
 
-ori = torch.load('checkpoints/VGG_done_3*3.t7', map_location='cpu')
+ori = torch.load('checkpoints/VGG_done.t7', map_location='cpu')
 new = torch.load('checkpoints/VGG_RestoreOrder.t7', map_location='cpu')
 
 #print(ori['net'].keys())
@@ -83,8 +85,8 @@ import matplotlib as mpl
 figsize = 11,9
 figure, ax = plt.subplots(figsize=figsize)
  
-ax.hist(same, 200, range=(0,1),cumulative=False, normed=1, facecolor='blue', alpha=0.5)
-ax.hist(diff, 200, range=(0,1),cumulative=False, normed=1, facecolor='pink', alpha=0.5)
+ax.hist(same, 200, range=(0,1),cumulative=False, density=True, facecolor='blue', alpha=0.5)
+ax.hist(diff, 200, range=(0,1),cumulative=False, density=True, facecolor='pink', alpha=0.5)
 
 
 font1 = {'family' : 'Times New Roman',

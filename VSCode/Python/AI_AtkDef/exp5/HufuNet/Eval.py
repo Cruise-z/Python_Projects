@@ -12,6 +12,7 @@ import torchvision
 import torchvision.transforms as transforms
 
 import os
+# os.chdir("./exp5/HufuNet")
 import json
 import argparse
 

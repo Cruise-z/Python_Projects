@@ -1,0 +1,5 @@
+/Data-free_Backdoor/__pycache__/**
+/Data-free_Backdoor/checkpoints/**
+/Data-free_Backdoor/dataset/**
+/Data-free_Backdoor/data/**
+/Data-free_Backdoor/models/**

@@ -23,7 +23,7 @@ from tqdm   import tqdm
 from PIL import Image
 
  
-model = torch.load('checkpoints/VGG_prune60.t7', map_location='cpu')
+model = torch.load('checkpoints/VGG_finetuned.t7', map_location='cpu')
 print(model['net'].keys())
 
 for i,name in enumerate([key for key in model['net'].keys() if 'conv' in key and 'weight' in key]):
