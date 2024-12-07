@@ -73,7 +73,10 @@ def local(model, tokenizer,
             if idx < start_index:
                 continue  # 跳过已处理的索引
             
-            item = json.loads(line)
+            try:
+                item = json.loads(line)
+            except:
+                continue
             label = filter(model, tokenizer, item['text'])
             if label == [1]:
                 filtered_data.append({"text": item['text'], "label": label[0]})
@@ -129,10 +132,12 @@ local_dir = config['default']['local_dir']
 model = DistilBertForSequenceClassification.from_pretrained("../results/checkpoint-15849")
 tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
 
-# 定义批次大小
-batch_size = 100
+config.read('runtime.ini')
 
-spilt_name = "CC-MAIN-2013-20"
+# 定义批次大小
+batch_size = config['default']['batch_size']
+
+spilt_name = config['default']['spilt_name']
 
 local(model, tokenizer, spilt_name, batch_size, './data/results', "log_Bert.txt")
     
