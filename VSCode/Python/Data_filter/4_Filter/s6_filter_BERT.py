@@ -135,7 +135,7 @@ tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
 config.read('runtime.ini')
 
 # 定义批次大小
-batch_size = config['default']['batch_size']
+batch_size = int(config['default']['batch_size'])
 
 spilt_name = config['default']['spilt_name']
 
