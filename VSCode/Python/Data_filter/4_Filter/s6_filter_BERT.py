@@ -136,6 +136,8 @@ config.read('runtime.ini')
 
 # 定义批次大小
 batch_size = int(config['default']['batch_size'])
+# print(type(batch_size))
+# print(batch_size)
 
 spilt_name = config['default']['spilt_name']
 
