@@ -1,2 +1,4 @@
 /results/**
 !/results/checkpoint-15849.tar.xz
+/temp/**
+/test/**

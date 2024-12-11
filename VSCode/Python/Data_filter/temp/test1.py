@@ -1,8 +1,17 @@
-from datasets import load_dataset
+import json
 
-# 清理缓存
-from datasets import set_caching_enabled, cleanup_cache_files
+def read_and_write_jsonl(input_filename, output_filename, num_lines=1000):
+    # 打开输入文件和输出文件
+    with open(input_filename, 'r', encoding='utf-8') as infile, open(output_filename, 'w', encoding='utf-8') as outfile:
+        # 读取前 num_lines 行并写入到输出文件
+        for i, line in enumerate(infile):
+            if i >= num_lines:
+                break
+            # 将读取的每一行转换为字典并写入输出文件
+            json_data = json.loads(line)
+            outfile.write(json.dumps(json_data, ensure_ascii=False) + '\n')
 
-# 打印删除的缓存大小
-deleted_size = cleanup_cache_files()
-print(f"Deleted cache size: {deleted_size} bytes")
+# 使用示例
+input_filename = './4_Filter/data/results/CC-MAIN-2013-20_Bert.jsonl'  # 输入文件路径
+output_filename = './test/demo.jsonl'  # 输出文件路径
+read_and_write_jsonl(input_filename, output_filename, num_lines=1000)
