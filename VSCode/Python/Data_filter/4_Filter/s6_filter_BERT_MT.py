@@ -213,6 +213,8 @@ if __name__ == "__main__":
     # 加载训练好的模型和分词器
     model = DistilBertForSequenceClassification.from_pretrained("../results/checkpoint-15849")
     tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+    
+    model.eval()
 
     process_file(model, tokenizer, 
                  jsonl_kw_path, temp_dir, target_file, 
