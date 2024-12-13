@@ -9,15 +9,22 @@ import configparser
 import concurrent.futures
 from tqdm import tqdm
 
+# 检查是否有可用的 GPU
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
 def count_lines_in_jsonl(file_path):
     """计算文件总行数"""
     result = subprocess.run(['wc', '-l', file_path], capture_output=True, text=True)
     line_count = int(result.stdout.split()[0])
     return line_count
 
-def filter(model, tokenizer, texts):
+def filter(device, model, tokenizer, texts):
     # 预处理输入数据
-    inputs = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+    inputs = tokenizer(texts, 
+                       padding=True, 
+                       truncation=True, 
+                       return_tensors="pt").to(device)# 将输入数据也移到 GPU
     with torch.no_grad():
         outputs = model(**inputs)
     # 获取 logits 和预测结果
@@ -70,7 +77,7 @@ def process_chunk(model, tokenizer, chunk,
         except:
             continue
         
-        label = filter(model, tokenizer, item['text'])
+        label = filter(device, model, tokenizer, item['text'])
         if label == [1]:
             filtered_data.append({"text": item['text'], "label": label[0]})
         
@@ -214,6 +221,8 @@ if __name__ == "__main__":
     model = DistilBertForSequenceClassification.from_pretrained("../results/checkpoint-15849")
     tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
     
+    # 将模型移到 GPU 或 CPU
+    model = model.to(device)
     model.eval()
 
     process_file(model, tokenizer, 
