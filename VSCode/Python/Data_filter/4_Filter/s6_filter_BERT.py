@@ -105,9 +105,9 @@ def local(model, tokenizer,
                     
             total_written += len(filtered_data)
             print(f"Written the final {len(filtered_data)} entries to {target_file}")
-
-        # 将临时文件的内容追加到目标文件
-        append_temp_to_target(temp_file, target_file)
+            # 将临时文件的内容追加到目标文件
+            append_temp_to_target(temp_file, target_file)
+        
         # 更新日志文件
         with open(log_file, 'w') as log:
             log.write(str(idx + 1))  # 记录总数

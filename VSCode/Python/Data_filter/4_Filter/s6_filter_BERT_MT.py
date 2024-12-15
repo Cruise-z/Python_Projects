@@ -80,25 +80,35 @@ def process_chunk(model, tokenizer, chunk,
         label = filter(device, model, tokenizer, item['text'])
         if label == [1]:
             filtered_data.append({"text": item['text'], "label": label[0]})
-        
-        processed += 1
+            
+            # 如果达到批次大小，则进行预测
+            if len(filtered_data) == batch_size:
+                # 将数据转换为 JSON 行，并逐行写入临时文件
+                write_to_temp_file(temp_file_path, filtered_data)
+                    
+                # 清空 filtered_data 并更新统计
+                filtered_data = []
+                processed += batch_size
+                    
+                #TODO:写入目标文件并更新日志
+                # 将临时文件的内容追加到目标文件
+                append_temp_to_target(temp_file_path, chunk_file_path)
+                # 更新日志文件
+                with open(log_file, 'w') as log:
+                    log.write(str(idx + 1))
 
-        # 每处理batch_size条数据，将它们写入临时文件，并追加到目标文件
-        if processed % batch_size == 0:
-            write_to_temp_file(temp_file_path, filtered_data)
-            append_temp_to_target(temp_file_path, chunk_file_path)
-            filtered_data.clear()  # 清空已写入的数据
-            # 更新日志文件
-            with open(log_file, 'w') as log:
-                log.write(str(idx + 1))  # 记录总数
-
-    # 将剩余的部分写入文件
+    # 处理剩余的文本
     if filtered_data:
-        write_to_temp_file(temp_file_path, filtered_data)
+        # 将数据转换为 JSON 行，并逐行写入临时文件
+        write_to_temp_file(temp_file_path, filtered_data)   
+        processed += len(filtered_data)
+        # 将临时文件的内容追加到目标文件
         append_temp_to_target(temp_file_path, chunk_file_path)
-        # 更新日志文件
-        with open(log_file, 'w') as log:
-            log.write(str(idx + 1))  # 记录总数
+    
+    # 更新日志文件
+    with open(log_file, 'w') as log:
+        log.write(str(idx + 1))  # 记录总数
+
     #!:注意[这里需要返回chunk_file的存放路径:chunk_file_path]       
     # 每个 future 的 result() 方法会返回一个值，而这个值通常是由 process_chunk 函数返回的。如果 process_chunk 返回的是 None，那么 future.result() 也会返回 None。
     return chunk_file_path
