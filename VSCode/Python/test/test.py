@@ -1,0 +1,1 @@
+print("void AsgvuwliymSrzyrgwbFunc(Dataset value8) {\n    if (logger.isDebugEnabled())\n        logger.debug(\" putResourceControl  \" + value8.getRestrictAccess() + \"  for  \" + value8.getName());\n    resourceControlHash.put(value8.getUrlPath(), value8.getRestrictAccess());\n    hasResourceControl = true;\n}")
