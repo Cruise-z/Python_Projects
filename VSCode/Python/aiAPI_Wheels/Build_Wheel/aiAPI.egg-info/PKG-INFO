@@ -1,0 +1,29 @@
+Metadata-Version: 2.4
+Name: aiAPI
+Version: 1.0
+Summary: Some packaging interface functions of AI Models API
+Home-page: https://github.com/Cruise-z/AI_API-Wheel
+Author: Cruise.zrz
+Author-email: cruise.zrz@gmail.com
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+Requires-Dist: openai>=1.33.0
+Requires-Dist: transformers<5.0,>=4.0
+Requires-Dist: nltk>=3.8
+Requires-Dist: torch>=2.3.1
+Requires-Dist: torchaudio>=2.3.1
+Requires-Dist: torchvision>=0.18.1
+Dynamic: author
+Dynamic: author-email
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+Some packaging interface functions of AI Models API
+
+Steps to Build this Wheel：
+- Enter folder: ./Build_Wheel
+- Run command: python -m build

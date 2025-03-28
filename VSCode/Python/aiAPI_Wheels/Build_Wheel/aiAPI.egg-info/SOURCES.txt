@@ -1,0 +1,11 @@
+README.md
+setup.py
+aiAPI/__init__.py
+aiAPI/api.py
+aiAPI/client.py
+aiAPI/model.py
+aiAPI.egg-info/PKG-INFO
+aiAPI.egg-info/SOURCES.txt
+aiAPI.egg-info/dependency_links.txt
+aiAPI.egg-info/requires.txt
+aiAPI.egg-info/top_level.txt

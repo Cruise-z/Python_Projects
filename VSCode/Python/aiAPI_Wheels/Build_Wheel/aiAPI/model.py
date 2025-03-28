@@ -1,0 +1,47 @@
+from typing import *
+from enum import Enum
+
+class Model(Enum):
+    ## 下面的模型为GPT的专用模型
+    text_embed_ada_002  = "text-embedding-ada-002"
+    text_embed_3_small  = "text-embedding-3-small"
+    text_embed_3_large  = "text-embedding-3-large"
+    gpt35t              = "gpt-3.5-turbo"
+    gpt35t_0125         = "gpt-3.5-turbo-0125"
+    gpt35t_1106         = "gpt-3.5-turbo-1106"
+    gpt35t_0613         = "gpt-3.5-turbo-0613"
+    gpt35t_0301         = "gpt-3.5-turbo-0301"
+    gpt4o               = "gpt-4o"
+    gpt4o_240513        = "gpt-4o-2024-05-13"
+    gpt4                = "gpt-4"
+    # 上述模型对免费版客户端可用，gpt4以及gpt4o一天共计可用三次
+    gpt35t_16k          = "gpt-3.5-turbo-16k"
+    gpt35t_16k_0613     = "gpt-3.5-turbo-16k-0613"
+    gpt35t_ca           = "gpt-3.5-turbo-ca"
+    gpt35t_inst         = "gpt-3.5-turbo-instruct"
+    gpt35t_inst_0914    = "gpt-3.5-turbo-instruct-0914"
+    gpt4_0613           = "gpt-4-0613"
+    gpt4_ca             = "gpt-4-ca"
+    gpt4_1106_prev      = "gpt-4-1106-preview"
+    gpt4_1106v_prev     = "gpt-4-1106-vision-preview"
+    gpt4_0125_prev      = "gpt-4-0125-preview"
+    gpt4v_prev          = "gpt-4-vision-preview"
+    gpt4t               = "gpt-4-turbo"
+    gpt4t_240409        = "gpt-4-turbo-2024-04-09"
+    gpt4t_prev          = "gpt-4-turbo-preview"
+    gpt4o_ca            = "gpt-4o-ca"
+    gpt4t_ca            = "gpt-4-turbo-ca"
+    gpt4t_prev_ca       = "gpt-4-turbo-preview-ca"
+    claude              = "claude-3-5-sonnet-20240620"
+    whisper             = "whisper-1"
+    tts1                = "tts-1"
+    tts1_1106           = "tts-1-1106"
+    tts1_hd             = "tts-1-hd"
+    tts1_hd_1106        = "tts-1-hd-1106"
+    dall_e2             = "dall-e-2"
+    dall_e3             = "dall-e-3"
+    # 上述模型对GPT付费版均可用
+    ## 下面的模型为Kimi的专用模型
+    kimi_8k             = "moonshot-v1-8k"
+    kimi_32k            = "moonshot-v1-32k"
+    kimi_128k           = "moonshot-v1-128k"
