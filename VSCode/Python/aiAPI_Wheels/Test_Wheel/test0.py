@@ -5,7 +5,7 @@ if __name__ == '__main__':
     # client = Client("./config/config.ini", "kimi")
     client = Client("./config/config.ini", "paid")
 
-    messages = ["你是AI吗，讲个笑话吧"]
+    messages = ["你是弱智吧吧主吗？", "mirror中有几个r?", "请你回复上述所有问题"]
 
     # files_chat(client, Model.kimi_128k, ["./Test_Wheel/test.md"], messages, StreamMode=True)
-    common_chat(client, Model.gpt4o, messages, False)
+    common_chat(client, Model.gpt4o, messages, StreamMode=True)

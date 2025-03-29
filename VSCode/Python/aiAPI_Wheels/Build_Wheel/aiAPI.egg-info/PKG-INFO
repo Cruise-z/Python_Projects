@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: aiAPI
-Version: 1.0
+Version: 1.0.1
 Summary: Some packaging interface functions of AI Models API
 Home-page: https://github.com/Cruise-z/AI_API-Wheel
 Author: Cruise.zrz
@@ -27,3 +27,9 @@ Some packaging interface functions of AI Models API
 Steps to Build this Wheel：
 - Enter folder: ./Build_Wheel
 - Run command: python -m build
+
+FIX:
+version 1.0: 
+    Init
+version 1.0.1: 
+    Fix the issue where the stream mode chunk is empty.

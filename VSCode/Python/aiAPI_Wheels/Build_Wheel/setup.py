@@ -3,7 +3,7 @@ import os
 print(os.getcwd())  # 打印当前工作目录
 
 setup(name='aiAPI', # 库的名称
-      version='1.0',    # 版本号
+      version='1.0.1',    # 版本号
       description='Some packaging interface functions of AI Models API',
       author='Cruise.zrz',
       author_email='cruise.zrz@gmail.com',

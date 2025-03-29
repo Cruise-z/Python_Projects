@@ -7,6 +7,12 @@ import nltk
 import re
 from pathlib import Path
 
+'''
+参考文档: 
+1. https://github.com/chatanywhere/GPT_API_free/blob/main/demo.py
+2. https://platform.openai.com/docs/guides/streaming-responses?api-mode=responses
+'''
+
 # 非流式响应
 def openai_api(Client: Client, Model: Model, messages: list):
     """为提供的对话消息创建新的回答
@@ -32,9 +38,10 @@ def openai_api_stream(Client: Client, Model: Model, messages: list):
     )
     ans = ""
     for chunk in stream:
-        if chunk.choices[0].delta.content is not None:
-            print(chunk.choices[0].delta.content, end="")
-            ans += chunk.choices[0].delta.content
+        if chunk.choices:
+            if chunk.choices[0].delta.content is not None:
+                print(chunk.choices[0].delta.content, end="")
+                ans += chunk.choices[0].delta.content
     print("\n")
     return ans
 
