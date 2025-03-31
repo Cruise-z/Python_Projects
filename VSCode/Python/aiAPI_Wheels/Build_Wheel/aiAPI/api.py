@@ -11,6 +11,7 @@ from pathlib import Path
 参考文档: 
 1. https://github.com/chatanywhere/GPT_API_free/blob/main/demo.py
 2. https://platform.openai.com/docs/guides/streaming-responses?api-mode=responses
+3. https://platform.moonshot.cn/docs/
 '''
 
 # 非流式响应
@@ -45,18 +46,9 @@ def openai_api_stream(Client: Client, Model: Model, messages: list):
     print("\n")
     return ans
 
-def common_chat(Client:Client, Model:Model, Messages:list, StreamMode:bool):
-    messages = []
-    for Message in Messages:
-        messages.append({'role': 'user','content': Message})
-    if StreamMode is True: # 流式调用
-        return openai_api_stream(Client, Model, messages)
-    else: # 非流式调用
-        return openai_api(Client, Model, messages)
-
 upload_Cachefiles_ReturnType = List[Dict[str, Any]]
 
-def upload_Cachefiles(Client:Client, filepaths:List[str], cache_tag:Optional[str] = None) -> upload_Cachefiles_ReturnType:
+def upload_files(Client:Client, filepaths:List[str], cache_tag:Optional[str] = None) -> upload_Cachefiles_ReturnType:
     """
     upload_files 会将传入的文件（路径）全部通过文件上传接口 '/v1/files' 上传，并获取上传后的
     文件内容生成文件 messages。每个文件会是一个独立的 message，这些 message 的 role 均为
@@ -127,8 +119,9 @@ def upload_Cachefiles(Client:Client, filepaths:List[str], cache_tag:Optional[str
             (Client.openai_client).files.delete(file_id=file_object.id)
         return messages
 
-def files_chat_interface(messages:upload_Cachefiles_ReturnType, Client:Client, Model:Model, filePaths:list[str], Messages:list[str], StreamMode:bool):
-    messages.extend(upload_Cachefiles(Client, filePaths))
+def files_chat(Client:Client, Model:Model, filePaths:list[str], Messages:list[str], StreamMode:bool, cache_tag:Optional[str] = None):
+    messages = []
+    messages.append(*upload_files(Client, filePaths, cache_tag=cache_tag))
     for Message in Messages:
         messages.append({'role': 'user','content': Message})
         if StreamMode is True: # 流式调用
@@ -136,14 +129,19 @@ def files_chat_interface(messages:upload_Cachefiles_ReturnType, Client:Client, M
         else: # 非流式调用
             return openai_api(Client, Model, messages)
 
-def files_chat(Client:Client, Model:Model, filePaths:list[str], Messages:list[str], StreamMode:bool):
+def common_chat(Client:Client, Model:Model, Messages:list, StreamMode:bool, refCache:bool=False):
     messages = []
-    return files_chat_interface(messages, Client, Model, filePaths, Messages, StreamMode)
-
-def cache_files_chat(Cachefiles:upload_Cachefiles_ReturnType, Client: Client, Model: Model, filePaths:list[str], Messages:list[str], StreamMode:bool):
-    # 我们使用*语法，来解构file_messages消息，使其成为messages列表的前N条messages。
-    messages = [*Cachefiles]
-    return files_chat_interface(messages, Client, Model, filePaths, Messages, StreamMode)
+    if refCache:
+        messages.append({
+            "role": "cache",
+            "content": f"tag=upload_files;reset_ttl=300",
+        })
+    for Message in Messages:
+        messages.append({'role': 'user','content': Message})
+    if StreamMode is True: # 流式调用
+        return openai_api_stream(Client, Model, messages)
+    else: # 非流式调用
+        return openai_api(Client, Model, messages)
 
 def count_tokens_in_file(file_path, tokenizer, model_max_length=1024):
     nltk.download('punkt')

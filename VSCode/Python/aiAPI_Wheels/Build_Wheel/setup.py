@@ -3,7 +3,7 @@ import os
 print(os.getcwd())  # 打印当前工作目录
 
 setup(name='aiAPI', # 库的名称
-      version='1.0.1',    # 版本号
+      version='1.0.2',    # 版本号
       description='Some packaging interface functions of AI Models API',
       author='Cruise.zrz',
       author_email='cruise.zrz@gmail.com',
@@ -18,5 +18,5 @@ setup(name='aiAPI', # 库的名称
           ],
       python_requires='>=3.7',
       long_description=open("README.md").read(),long_description_content_type="text/markdown",
-      url="https://github.com/Cruise-z/AI_API-Wheel"
+      url="https://github.com/Cruise-z/Python_Projects/tree/main/VSCode/Python/aiAPI_Wheels"
 )

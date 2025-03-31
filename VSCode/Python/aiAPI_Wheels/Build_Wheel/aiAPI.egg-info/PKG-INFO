@@ -1,8 +1,8 @@
 Metadata-Version: 2.4
 Name: aiAPI
-Version: 1.0.1
+Version: 1.0.2
 Summary: Some packaging interface functions of AI Models API
-Home-page: https://github.com/Cruise-z/AI_API-Wheel
+Home-page: https://github.com/Cruise-z/Python_Projects/tree/main/VSCode/Python/aiAPI_Wheels
 Author: Cruise.zrz
 Author-email: cruise.zrz@gmail.com
 Requires-Python: >=3.7
@@ -29,7 +29,12 @@ Steps to Build this Wheel：
 - Run command: python -m build
 
 FIX:
-version 1.0: 
-    Init
-version 1.0.1: 
-    Fix the issue where the stream mode chunk is empty.
+- version 1.0: 
+  Init.
+- version 1.0.1: 
+  Fix the issue where the stream mode chunk is empty.
+- version 1.0.2:
+  - Optimize file upload dialogue logic, control whether files enter cache through cache tags.
+  - Add common chat conversation reference caching logic.
+  
+  The next version will update the `chatgpt` related file upload logic based on the `kimi AI` file upload logic.

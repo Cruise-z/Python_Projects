@@ -1,4 +1,4 @@
-from gptAPI import *
+from aiAPI import *
 import os
 import random
 
