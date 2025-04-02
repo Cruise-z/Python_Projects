@@ -129,12 +129,12 @@ def files_chat(Client:Client, Model:Model, filePaths:list[str], Messages:list[st
         else: # 非流式调用
             return openai_api(Client, Model, messages)
 
-def common_chat(Client:Client, Model:Model, Messages:list, StreamMode:bool, refCache:bool=False):
+def common_chat(Client:Client, Model:Model, Messages:list, StreamMode:bool, cache_tag:Optional[str] = None):
     messages = []
-    if refCache:
+    if cache_tag:
         messages.append({
             "role": "cache",
-            "content": f"tag=upload_files;reset_ttl=300",
+            "content": f"tag={cache_tag};reset_ttl=300",
         })
     for Message in Messages:
         messages.append({'role': 'user','content': Message})

@@ -217,6 +217,54 @@ def upload_files(Client:Client, filepaths:List[str], cache_tag:Optional[str] = N
             (Client.openai_client).files.delete(file_id=file_object.id)
         return messages
 
+def upload_files_gpt(Client, filepaths: List[str], cache_tag: Optional[str] = None) -> List[dict]:
+    messages = []
+    file_objects = []
+
+    # 上传文件并生成内容消息
+    for file in filepaths:
+        file_path = Path(file)
+        if file_path.exists():
+            # 确保以二进制模式打开文件
+            with open(file_path, 'rb') as f:  # 注意这里使用 'rb' 模式
+                file_object = (Client.openai_client).files.create(file=f, purpose="answers")
+                file_objects.append(file_object)
+
+                # 获取文件内容并生成消息
+                file_content = (Client.openai_client).files.retrieve(file_object.id).data['text']
+                messages.append({"role": "system", "content": file_content})
+        else:
+            print(f"File: {file_path} does not exist!")
+
+    # 如果启用了缓存
+    if cache_tag:
+        # 通过 HTTP 请求将文件内容缓存
+        r = httpx.post(
+            f"{Client.__base_url}/v1/caching",  # 假设这是缓存的 URL
+            headers={"Authorization": f"Bearer {Client.__api_key}"},
+            json={
+                "model": "gpt-4",  # 可根据实际情况指定模型
+                "messages": messages,
+                "ttl": 300,  # 缓存默认有效期为 300 秒
+                "tags": [cache_tag],
+            }
+        )
+
+        if r.status_code != 200:
+            raise Exception(f"Error creating cache: {r.text}")
+
+        # 缓存成功后，仅通过缓存标签引用文件内容，避免重复传输
+        return [{
+            "role": "cache",
+            "content": f"tag={cache_tag};reset_ttl=300",  # 重设缓存 TTL 为 300 秒
+        }]
+    else:
+        # 清除文件对象
+        for file_object in file_objects:
+            Client.openai_client.File.delete(file_object.id)
+
+        return messages
+
 def files_chat(Client:Client, Model:Model, filePaths:list[str], Messages:list[str], StreamMode:bool, cache_tag:Optional[str] = None):
     messages = []
     messages.append(*upload_files(Client, filePaths, cache_tag=cache_tag))
@@ -227,12 +275,12 @@ def files_chat(Client:Client, Model:Model, filePaths:list[str], Messages:list[st
         else: # 非流式调用
             return openai_api(Client, Model, messages)
 
-def common_chat(Client:Client, Model:Model, Messages:list, StreamMode:bool, refCache:bool=False):
+def common_chat(Client:Client, Model:Model, Messages:list, StreamMode:bool, cache_tag:Optional[str] = None):
     messages = []
-    if refCache:
+    if cache_tag:
         messages.append({
             "role": "cache",
-            "content": f"tag=upload_files;reset_ttl=300",
+            "content": f"tag={cache_tag};reset_ttl=300",
         })
     for Message in Messages:
         messages.append({'role': 'user','content': Message})
@@ -281,10 +329,10 @@ def Data_quality_assessment(Client: Client, Model: Model, File_path):
 
 if __name__ == '__main__':
     # client = Client("./config/config.ini", "kimi")
-    client = Client("/home/zrz/.config/Personal_config/config_aiAPI.ini", "kimi")
+    client = Client("/home/zrz/.config/Personal_config/config_aiAPI.ini", "paid")
 
-    messages = ["上述所有文件有涉及到道德和君子品行相关的内容吗"]
+    messages = ["上述文件内容涉及到道德以及法律相关的内容吗"]
 
-    # files_chat(client, Model.kimi_128k, ["./Test_Wheel/test.md"], messages, StreamMode=True, cache_tag="upload_files")
+    files_chat(client, Model.gpt4, ["./Test_Wheel/test.md"], messages, StreamMode=True)
     # files_chat(client, Model.kimi_128k, ["./Test_Wheel/test0.md"], messages, StreamMode=True)
-    common_chat(client, Model.kimi_128k, messages, StreamMode=True, refCache=True)
+    # common_chat(client, Model.kimi_128k, messages, StreamMode=True)
