@@ -17,7 +17,7 @@ def high_frequency_energy_ratio(dct_matrix, threshold=0.5):
     total_energy = np.sum(np.abs(dct_matrix))
     return hf_energy / total_energy if total_energy > 0 else 0
 
-def compute_dct_8x8_quantized(image):
+def compute_dct_8x8_quantized_1(image):
     """
     计算 8×8 DCT 并进行 JPEG 量化
     """
@@ -46,6 +46,48 @@ def compute_dct_8x8_quantized(image):
             dct_blocks[i:i+block_size, j:j+block_size] = quantized_block
 
     return dct_blocks
+
+def compute_dct_8x8_quantized(image):
+    """
+    计算 8×8 DCT 并进行 JPEG 量化
+    """
+    h, w = image.shape
+    block_size = 8
+
+    # JPEG 标准亮度量化表（质量 50%）
+    Q50 = np.array([[16, 11, 10, 16, 24, 40, 51, 61],
+                    [12, 12, 14, 19, 26, 58, 60, 55],
+                    [14, 13, 16, 24, 40, 57, 69, 56],
+                    [14, 17, 22, 29, 51, 87, 80, 62],
+                    [18, 22, 37, 56, 68, 109, 103, 77],
+                    [24, 35, 55, 64, 81, 104, 113, 92],
+                    [49, 64, 78, 87, 103, 121, 120, 101],
+                    [72, 92, 95, 98, 112, 100, 103, 99]])
+
+    # 确保图像的高度和宽度是 8 的倍数
+    if h % block_size != 0:
+        padding_h = block_size - (h % block_size)
+        image = np.pad(image, ((0, padding_h), (0, 0)), mode='constant', constant_values=0)
+        h = image.shape[0]
+
+    if w % block_size != 0:
+        padding_w = block_size - (w % block_size)
+        image = np.pad(image, ((0, 0), (0, padding_w)), mode='constant', constant_values=0)
+        w = image.shape[1]
+
+    # 创建 DCT 结果存储矩阵
+    dct_blocks = np.zeros((h, w), dtype=np.float32)
+
+    # 遍历每个 8×8 块
+    for i in range(0, h, block_size):
+        for j in range(0, w, block_size):
+            block = image[i:i+block_size, j:j+block_size].astype(np.float32) - 128
+            dct_block = cv2.dct(block)  # 计算 DCT
+            quantized_block = np.round(dct_block / Q50)  # 进行 JPEG 量化
+            dct_blocks[i:i+block_size, j:j+block_size] = quantized_block
+
+    return dct_blocks
+
 
 def sparsity_ratio(dct_matrix):
     """
@@ -125,11 +167,11 @@ def dct_analysis(image_path):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-num = 10
+num = 12
 src = f"./test{num}_src.jpg"
 test = f"./test{num}.jpg"
-# print("src image inf: ")
-# analyze_image(src)
-# print("tested image inf: ")
-# analyze_image(test)
+print("src image inf: ")
+analyze_image(src)
+print("tested image inf: ")
+analyze_image(test)
 dct_analysis(src)

@@ -13,4 +13,8 @@ FIX:
   - Optimize file upload dialogue logic, control whether files enter cache through cache tags.
   - Add common chat conversation reference caching logic.
   
-  The next version will update the `chatgpt` related file upload logic based on the `kimi AI` file upload logic.
+  The next version will update the `gpt` related file upload logic based on the `kimi AI` file upload logic.
+- version 1.0.3:
+  - `gpt` related file upload logic init
+  
+  At present, there is no clear file caching and uploading mechanism related to GPT, and this issue may be resolved in the future

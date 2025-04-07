@@ -147,122 +147,113 @@ def openai_api_stream(Client: Client, Model: Model, messages: list):
 upload_Cachefiles_ReturnType = List[Dict[str, Any]]
 
 def upload_files(Client:Client, filepaths:List[str], cache_tag:Optional[str] = None) -> upload_Cachefiles_ReturnType:
-    """
-    upload_files 会将传入的文件（路径）全部通过文件上传接口 '/v1/files' 上传，并获取上传后的
-    文件内容生成文件 messages。每个文件会是一个独立的 message，这些 message 的 role 均为
-    system，Kimi 大模型会正确识别这些 system messages 中的文件内容。
- 
-    如果你设置了 cache_tag 参数，那么 upload_files 还会将你上传的文件内容存入 Context Cache
-    上下文缓存中，后续你就可以使用这个 Cache 来对文件内容进行提问。当你指定了 cache_tag 的值时，
-    upload_files 会生成一个 role 为 cache 的 message，通过这个 message，你可以引用已被缓存
-    的文件内容，这样就不必每次调用 `/v1/chat/completions` 接口时都要把文件内容再传输一遍。
- 
-    注意，如果你设置了 cache_tag 的值，你需要把 upload_files 返回的 messages 放置在请求
-    `/v1/chat/completions` 接口时 messages 参数列表的第一位（实际上，我们推荐不管是否启用
-    cache_tag，都将 upload_files 返回的 messages 放置在 messages 列表的头部）。
- 
-    关于 Context Caching 的具体信息，可以访问这里：
- 
-    https://platform.moonshot.cn/docs/api/caching
- 
-    :param files: 一个包含要上传文件的路径的列表，路径可以是绝对路径也可以是相对路径，请使用字符串
-        的形式传递文件路径。
-    :param cache_tag: 设置 Context Caching 的 tag 值，你可以将 tag 理解为自定义的 Cache 名称，
-        当你设置了 cache_tag 的值，就意味着启用 Context Caching 功能，默认缓存时间是 300 秒，每次
-        携带缓存进行 `/v1/chat/completions` 请求都将刷新缓存存活时间（300 秒）。
-    :return: 一个包含了文件内容或文件缓存的 messages 列表，请将这些 messages 加入到 Context 中，
-        即请求 `/v1/chat/completions` 接口时的 messages 参数中。
-    """
-    messages = []
-    file_objects = []
-    # 对每个文件路径，我们都会上传文件并抽取文件内容，最后生成一个 role 为 system 的 message，并加入
-    # 到最终返回的 messages 列表中。
-    for file in filepaths:
-        filePath = Path(file)
-        if filePath.exists():
-            file_object = (Client.openai_client).files.create(file=filePath, purpose="file-extract")
-            file_objects.append(file_object)
-            file_content = (Client.openai_client).files.content(file_id=file_object.id).text
-            messages.append({"role": "system", "content": file_content,})
-        else:
-            print("File:" + str(filePath) + "not exist!!!")
+    if Client.CheckType == "kimi":
+        """
+        upload_files 会将传入的文件（路径）全部通过文件上传接口 '/v1/files' 上传，并获取上传后的
+        文件内容生成文件 messages。每个文件会是一个独立的 message，这些 message 的 role 均为
+        system，Kimi 大模型会正确识别这些 system messages 中的文件内容。
     
-    if cache_tag:
-        # 当启用缓存（即 cache_tag 有值时），我们通过 HTTP 接口创建缓存，缓存的内容则是前文中通过文件上传
-        # 和抽取接口生成的 messages 内容，我们为这些缓存设置一个默认的有效期 300 秒（通过 ttl 字段），并
-        # 为这个缓存打上标记，标记值为 cache_tag（通过 tags 字段）。
-        r = httpx.post(f"{(Client.openai_client).base_url}caching",
-                       headers={
-                           "Authorization": f"Bearer {(Client.openai_client).api_key}",
-                       },
-                       json={
-                           "model": "moonshot-v1",
-                           "messages": messages,
-                           "ttl": 300,
-                           "tags": [cache_tag],
-                       })
- 
-        if r.status_code != 200:
-            raise Exception(r.text)
- 
-        # 创建缓存成功后，我们不再需要将文件抽取后的内容原封不动地加入 messages 中，取而代之的是，我们可以设置一个
-        # role 为 cache 的消息来引用我们已缓存的文件内容，只需要在 content 中指定我们给 Cache 设定的 tag 即可，
-        # 这样可以有效减少网络传输的开销，即使是多个文件内容，也只需要添加一条 message，保持 messages 列表的清爽感。
-        return [{
-            "role": "cache",
-            "content": f"tag={cache_tag};reset_ttl=300",
-        }]
-    else:
-        for file_object in file_objects:
-            (Client.openai_client).files.delete(file_id=file_object.id)
-        return messages
-
-def upload_files_gpt(Client, filepaths: List[str], cache_tag: Optional[str] = None) -> List[dict]:
-    messages = []
-    file_objects = []
-
-    # 上传文件并生成内容消息
-    for file in filepaths:
-        file_path = Path(file)
-        if file_path.exists():
-            # 确保以二进制模式打开文件
-            with open(file_path, 'rb') as f:  # 注意这里使用 'rb' 模式
-                file_object = (Client.openai_client).files.create(file=f, purpose="answers")
+        如果你设置了 cache_tag 参数，那么 upload_files 还会将你上传的文件内容存入 Context Cache
+        上下文缓存中，后续你就可以使用这个 Cache 来对文件内容进行提问。当你指定了 cache_tag 的值时，
+        upload_files 会生成一个 role 为 cache 的 message，通过这个 message，你可以引用已被缓存
+        的文件内容，这样就不必每次调用 `/v1/chat/completions` 接口时都要把文件内容再传输一遍。
+    
+        注意，如果你设置了 cache_tag 的值，你需要把 upload_files 返回的 messages 放置在请求
+        `/v1/chat/completions` 接口时 messages 参数列表的第一位（实际上，我们推荐不管是否启用
+        cache_tag，都将 upload_files 返回的 messages 放置在 messages 列表的头部）。
+    
+        关于 Context Caching 的具体信息，可以访问这里：
+    
+        https://platform.moonshot.cn/docs/api/caching
+    
+        :param files: 一个包含要上传文件的路径的列表，路径可以是绝对路径也可以是相对路径，请使用字符串
+            的形式传递文件路径。
+        :param cache_tag: 设置 Context Caching 的 tag 值，你可以将 tag 理解为自定义的 Cache 名称，
+            当你设置了 cache_tag 的值，就意味着启用 Context Caching 功能，默认缓存时间是 300 秒，每次
+            携带缓存进行 `/v1/chat/completions` 请求都将刷新缓存存活时间（300 秒）。
+        :return: 一个包含了文件内容或文件缓存的 messages 列表，请将这些 messages 加入到 Context 中，
+            即请求 `/v1/chat/completions` 接口时的 messages 参数中。
+        """
+        messages = []
+        file_objects = []
+        # 对每个文件路径，我们都会上传文件并抽取文件内容，最后生成一个 role 为 system 的 message，并加入
+        # 到最终返回的 messages 列表中。
+        for file in filepaths:
+            filePath = Path(file)
+            if filePath.exists():
+                file_object = (Client.openai_client).files.create(file=filePath, purpose="file-extract")
                 file_objects.append(file_object)
-
-                # 获取文件内容并生成消息
-                file_content = (Client.openai_client).files.retrieve(file_object.id).data['text']
-                messages.append({"role": "system", "content": file_content})
+                file_content = (Client.openai_client).files.content(file_id=file_object.id).text
+                messages.append({"role": "system", "content": file_content,})
+            else:
+                print("File:" + str(filePath) + "not exist!!!")
+        
+        if cache_tag:
+            # 当启用缓存（即 cache_tag 有值时），我们通过 HTTP 接口创建缓存，缓存的内容则是前文中通过文件上传
+            # 和抽取接口生成的 messages 内容，我们为这些缓存设置一个默认的有效期 300 秒（通过 ttl 字段），并
+            # 为这个缓存打上标记，标记值为 cache_tag（通过 tags 字段）。
+            r = httpx.post(f"{(Client.openai_client).base_url}caching",
+                        headers={
+                            "Authorization": f"Bearer {(Client.openai_client).api_key}",
+                        },
+                        json={
+                            "model": "moonshot-v1",
+                            "messages": messages,
+                            "ttl": 300,
+                            "tags": [cache_tag],
+                        })
+    
+            if r.status_code != 200:
+                raise Exception(r.text)
+    
+            # 创建缓存成功后，我们不再需要将文件抽取后的内容原封不动地加入 messages 中，取而代之的是，我们可以设置一个
+            # role 为 cache 的消息来引用我们已缓存的文件内容，只需要在 content 中指定我们给 Cache 设定的 tag 即可，
+            # 这样可以有效减少网络传输的开销，即使是多个文件内容，也只需要添加一条 message，保持 messages 列表的清爽感。
+            return [{
+                "role": "cache",
+                "content": f"tag={cache_tag};reset_ttl=300",
+            }]
         else:
-            print(f"File: {file_path} does not exist!")
-
-    # 如果启用了缓存
-    if cache_tag:
-        # 通过 HTTP 请求将文件内容缓存
-        r = httpx.post(
-            f"{Client.__base_url}/v1/caching",  # 假设这是缓存的 URL
-            headers={"Authorization": f"Bearer {Client.__api_key}"},
-            json={
-                "model": "gpt-4",  # 可根据实际情况指定模型
-                "messages": messages,
-                "ttl": 300,  # 缓存默认有效期为 300 秒
-                "tags": [cache_tag],
-            }
-        )
-
-        if r.status_code != 200:
-            raise Exception(f"Error creating cache: {r.text}")
-
-        # 缓存成功后，仅通过缓存标签引用文件内容，避免重复传输
-        return [{
-            "role": "cache",
-            "content": f"tag={cache_tag};reset_ttl=300",  # 重设缓存 TTL 为 300 秒
-        }]
+            for file_object in file_objects:
+                (Client.openai_client).files.delete(file_id=file_object.id)
+            return messages
     else:
-        # 清除文件对象
-        for file_object in file_objects:
-            Client.openai_client.File.delete(file_object.id)
-
+        # messages = []
+        # file_objects = []
+        # # 对每个文件路径，我们都会上传文件并抽取文件内容，最后生成一个 role 为 system 的 message，并加入
+        # # 到最终返回的 messages 列表中。
+        # for file in filepaths:
+        #     filePath = Path(file)
+        #     if filePath.exists():
+        #         file_object = (Client.openai_client).files.create(file=open(filePath, "rb"), purpose="user_data")
+        #         file_objects.append(file_object)
+        #         file_content = (Client.openai_client).files.content(file_id=file_object.id).text
+        #         messages.append({"role": "system", "content": file_content,})
+        #     else:
+        #         print("File:" + str(filePath) + "not exist!!!")
+        
+        # if cache_tag:
+        #     tag = []
+        #     for file_obj in file_objects:
+        #         tag.append({
+        #             "role": "user",
+        #             "content": [
+        #                 {
+        #                     "type": "input_file",
+        #                     "file_id": file_obj.id,
+        #                 }
+        #             ]
+        #         })
+        #     return tag
+        # else:
+        #     return messages
+        messages = []
+        for file in filepaths:
+            filePath = Path(file)
+            if filePath.exists():
+                with open(filePath, 'r', encoding='utf-8') as file:
+                    file_content = file.read()
+                messages.append({"role": "system", "content": file_content,})
         return messages
 
 def files_chat(Client:Client, Model:Model, filePaths:list[str], Messages:list[str], StreamMode:bool, cache_tag:Optional[str] = None):
@@ -333,6 +324,6 @@ if __name__ == '__main__':
 
     messages = ["上述文件内容涉及到道德以及法律相关的内容吗"]
 
-    files_chat(client, Model.gpt4, ["./Test_Wheel/test.md"], messages, StreamMode=True)
+    files_chat(client, Model.gpt4o, ["./Test_Wheel/test.md"], messages, StreamMode=True)
     # files_chat(client, Model.kimi_128k, ["./Test_Wheel/test0.md"], messages, StreamMode=True)
     # common_chat(client, Model.kimi_128k, messages, StreamMode=True)
