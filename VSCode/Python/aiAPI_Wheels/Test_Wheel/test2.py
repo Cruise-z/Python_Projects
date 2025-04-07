@@ -8,4 +8,4 @@ if __name__ == '__main__':
 
     # files_chat(client, Model.kimi_128k, ["./Test_Wheel/test.md"], messages, StreamMode=True, cache_tag="upload_files")
     # files_chat(client, Model.kimi_128k, ["./Test_Wheel/test0.md"], messages, StreamMode=True)
-    common_chat(client, Model.kimi_128k, messages, StreamMode=True)
+    common_chat(client, Model.kimi_128k, messages, StreamMode=True, cache_tag="upload_files")

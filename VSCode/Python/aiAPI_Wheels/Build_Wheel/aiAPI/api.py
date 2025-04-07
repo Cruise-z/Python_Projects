@@ -6,6 +6,7 @@ from nltk.tokenize import sent_tokenize
 import nltk
 import re
 from pathlib import Path
+import requests
 
 '''
 参考文档: 
@@ -49,7 +50,8 @@ def openai_api_stream(Client: Client, Model: Model, messages: list):
 upload_Cachefiles_ReturnType = List[Dict[str, Any]]
 
 def upload_files(Client:Client, filepaths:List[str], cache_tag:Optional[str] = None) -> upload_Cachefiles_ReturnType:
-    if Client.CheckType == "kimi":
+    print("Client type is:" + Client.CheckType())
+    if Client.CheckType() == 'Kimi':
         """
         upload_files 会将传入的文件（路径）全部通过文件上传接口 '/v1/files' 上传，并获取上传后的
         文件内容生成文件 messages。每个文件会是一个独立的 message，这些 message 的 role 均为
@@ -157,6 +159,17 @@ def upload_files(Client:Client, filepaths:List[str], cache_tag:Optional[str] = N
                     file_content = file.read()
                 messages.append({"role": "system", "content": file_content,})
         return messages
+
+def delete_cache_kimi(Client:Client, cache_id:str):
+    url = f"https://api.moonshot.cn/v1/caching/{cache_id}"
+    headers={
+        "Authorization": f"Bearer {(Client.openai_client).api_key}",
+    }
+    response = requests.delete(url, headers=headers)
+    if response.status_code == 200:
+        print("Cache deleted successfully")
+    else:
+        print(f"Failed to delete cache: {response.status_code}, {response.text}") 
 
 def files_chat(Client:Client, Model:Model, filePaths:list[str], Messages:list[str], StreamMode:bool, cache_tag:Optional[str] = None):
     messages = []
