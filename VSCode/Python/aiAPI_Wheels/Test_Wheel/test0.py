@@ -320,10 +320,11 @@ def Data_quality_assessment(Client: Client, Model: Model, File_path):
 
 if __name__ == '__main__':
     # client = Client("./config/config.ini", "kimi")
-    client = Client("/home/zrz/.config/Personal_config/config_aiAPI.ini", "paid")
+    client = Client("/home/zrz/.config/Personal_config/config_aiAPI.ini", "kimi")
 
     messages = ["上述文件内容涉及到道德以及法律相关的内容吗"]
 
-    files_chat(client, Model.gpt4o, ["./Test_Wheel/test.md"], messages, StreamMode=True)
+    # files_chat(client, Model.gpt4o, ["./Test_Wheel/test.md"], messages, StreamMode=True)
     # files_chat(client, Model.kimi_128k, ["./Test_Wheel/test0.md"], messages, StreamMode=True)
-    # common_chat(client, Model.kimi_128k, messages, StreamMode=True)
+    ans = common_chat(client, Model.kimi_128k, messages, StreamMode=True)
+    print("ans is :" + ans)
