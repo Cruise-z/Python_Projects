@@ -1,0 +1,102 @@
+如下是对java源代码进行源码混淆的规则, 按强度分级：
+
+1. 数据流混淆
+1.1 可命名实体随机化重命名
+
+1.1-1. Rename method names to random string values
+下面是一个示例：
+源码：
+```
+public int calc(double numArray[]) {...}
+```
+混淆后的源码：
+```
+public int SqcFsxe(double[] numArray) {...}
+```
+这样的混淆方式本质上是将方法的名称随机化
+
+1.1-2. Rename variable names to random string values
+下面是一个示例：
+源码：
+```
+int myNum = 5;
+float myFloatNum = 5.99f;
+char myLetter = 'D';
+boolean myBool = true;
+String myText = "Java Obfuscator";
+```
+混淆后的源码：
+```
+int ap9axcpArl_nyapT__QpnQOl_ = 5;
+float var_3897 = 5.99f;
+char aAqktfgaaaqRjhiouqlSwoqgob = 'D';
+boolean nVdbxytrOhipcleakh = true;
+String MUQJO_OGIEHC = "Java Obfuscator";
+```
+这样的混淆方式本质上是将变量的名称随机化
+
+1.2 可命名实体声明位置随机化(在使用位置之前)
+
+2. 控制流混淆
+
+2.1 语句风格转换
+
+2.2 控制流扁平化
+2.2-1 Change linear code execution flow to nonlinear version
+下面是一个示例：
+源码：
+```
+System.out.println("1");
+System.out.println("2");
+System.out.println("3");
+```
+混淆后的源码：
+```
+int JOWCN_FGIWJIGTWJ_JSDAO = 0;
+JOWCN_FGIWJIGTWJ_JSDAO = 1148643996;
+while (JOWCN_FGIWJIGTWJ_JSDAO != 1421874931) {
+  switch(JOWCN_FGIWJIGTWJ_JSDAO) {
+    case 797943348:
+      System.out.println("3");
+      JOWCN_FGIWJIGTWJ_JSDAO += 623931583;
+      break;
+    case 1148643996:
+      System.out.println("1");
+      JOWCN_FGIWJIGTWJ_JSDAO -= 911757835;
+      break;
+    case 236886161:
+      System.out.println("2");
+      JOWCN_FGIWJIGTWJ_JSDAO -= -561057187;
+      break;
+  }
+}
+```
+这样的混淆方式本质上是利用循环和switch case以及为条件转换以及跳出循环计算合适的变量值，在不改变执行流实际顺序的情况下改变其复杂度以及可读性
+
+3. 其他方式
+
+4. Encrypt integer values using floating point math functions
+下面是一个示例：
+源码：
+```
+public static int method(int param) {
+  int a = 1;
+  int b = a + 2;
+  int c = 0;
+  if (b > 3) return c;
+
+  return 4;
+}
+```
+混淆后的源码：
+```
+public static int method(int param) {
+  int a = (int) (681.57415 - Math.cbrt(315229127.95597));
+  int b = a + (int) (2.76739 - Math.acos(0.71973));
+  int c = (int) (-1.20690 + Math.tan(0.87887));
+  if (b > (int) (-1.85887 + Math.log10(72255.55488)))
+    return c;
+  return (int) Math.min(6525.74776, 4.00000);
+}
+```
+这样的混淆方式本质上是将赋予变量的整数值变成运算表达式
