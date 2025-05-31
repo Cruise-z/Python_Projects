@@ -7,14 +7,14 @@ from tqdm import tqdm
 
 if __name__ == '__main__':
     struct_doc('java', 
-               "4bit_gru_srcmarker_42_csn_java_tag1_1.jsonl", 
-               ObfusType.tag1_1)
+               "4bit_gru_srcmarker_42_csn_java_tag1_2.jsonl", 
+               ObfusType.tag1_2)
     
-    doc2embedData(ObfusType.tag1_1)
+    doc2embedData(ObfusType.tag1_2)
     
-    # code1 = "@Subscribe(sticky = true, threadMode = ThreadMode.MAIN)\n    public void onEventMainThread(MediaEvent event) {\n        RTEditText editor = mEditors.get(mActiveEditor);\n        RTMedia media = event.getMedia();\n        if (editor != null && media instanceof RTImage) {\n            insertImage(editor, (RTImage) media);\n            EventBus.getDefault().removeStickyEvent(event);\n            mActiveEditor = Integer.MAX_VALUE;\n        }\n    }"
+    # code1 = "protected final void fastPathOrderedEmit(U value, boolean delayError, Disposable disposable) {\n        final Observer<? super V> observer = downstream;\n        final SimplePlainQueue<U> q = queue;\n\n        if (wip.get() == 0 && wip.compareAndSet(0, 1)) {\n            if (q.isEmpty()) {\n                accept(observer, value);\n                if (leave(-1) == 0) {\n                    return;\n                }\n            } else {\n                q.offer(value);\n            }\n        } else {\n            q.offer(value);\n            if (!enter()) {\n                return;\n            }\n        }\n        QueueDrainHelper.drainLoop(q, observer, delayError, disposable, this);\n    }"
 
-    # code2 = "@Subscribe(sticky = true, threadMode = ThreadMode.MAIN)\npublic void A_aFzyiKNg_Zas_FDEZgL(MediaEvent Triangulations) {\n    RTEditText Editor = mEditors.get(mActiveEditor);\n    RTMedia Media = Triangulations.getMedia();\n    if (Editor != null && Media instanceof RTImage) {\n        insertImage(Editor, (RTImage) Media);\n        EventBus.getDefault().removeStickyEvent(Triangulations);\n        mActiveEditor = Integer.MAX_VALUE;\n    }\n}"
+    # code2 = "protected final void func_3726(U Value, boolean DelayError, Disposable Disposable) {\n    final Observer<? super V> Observer = downstream;\n    final SimplePlainQueue<U> Mentry = queue;\n    if (wip.get() == 0 && wip.compareAndSet(0, 1)) {\n        if (Mentry.isEmpty()) {\n            accept(Observer, Value);\n            if (leave(-1) == 0) {\n                return;\n            }\n        } else {\n            Mentry.offer(Value);\n        }\n    } else {\n        Mentry.offer(Value);\n        if (!enter()) {\n            return;\n        }\n    }\n    QueueDrainHelper.drainLoop(Mentry, Observer, DelayError, Disposable, this);\n}"
     
     # LANGUAGE = 'java'
     # wparser = WParser(LANGUAGE)
@@ -29,15 +29,15 @@ if __name__ == '__main__':
     # # printAST(code1, 'java')
     
     # # 假设你的输出结果是 ret
-    # # funcs, params, locals_, catches, foreach_vars, lambda_params = extract_renameable_entities(format_code2, parser)
+    # funcs, params, locals_, catches, foreach_vars, lambda_params = extract_renameable_entities(format_code2, wparser)
 
-    # # print_renameable_entities([funcs, params, locals_, catches, foreach_vars, lambda_params])
+    # print_renameable_entities([funcs, params, locals_, catches, foreach_vars, lambda_params])
 
     
     
-    # diff = tagDiff("tag1_2", wparser, format_code1, format_code2)
+    # # diff = tagDiff("tag1_2", wparser, format_code1, format_code2)
     
-    # print(diff)
+    # # print(diff)
     
     
     

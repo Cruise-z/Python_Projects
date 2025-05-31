@@ -89,7 +89,8 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                 if not (entity.start <= node.start_byte <= entity.end):
                     line = node.start_point[0] + 1
                     text = source_lines[line - 1].strip() if line - 1 < len(source_lines) else ""
-                    entity.use_fpos = (text, line)
+                    #!更改实体字段名后在这里也需要更改
+                    entity.useFPos = (text, line)
                     return True  # 提前返回
             for child in node.children:
                 if recurse(child):

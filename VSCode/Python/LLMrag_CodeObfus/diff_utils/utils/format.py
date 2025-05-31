@@ -63,10 +63,10 @@ class diffTag1_2:
     type: Optional[str]       # 数据类型，如 void / int / String 等
     modifiers: List[str]      # 修饰符，如 ["public", "static"]
     scope: List[str]          # 原始作用域路径，如 method_declaration / parameter / local
-    oriDecPos: Optional[Tuple[str, int]]  # 原始声明位置，(声明语句, 行号)
-    newDecPos: Optional[Tuple[str, int]]  # 混淆后声明位置，(声明语句, 行号)
-    oriUseFPos: Optional[Tuple[str, int]]  # 原始首次使用位置，(使用语句, 行号)
-    newUseFPos: Optional[Tuple[str, int]]  # 混淆后首次使用位置，(使用语句, 行号)
+    # 原始及混淆后声明位置，([声明语句, 行号], [声明语句, 行号])
+    decPosDiff: Tuple[Optional[Tuple[str, int]], Optional[Tuple[str, int]]]
+    # 原始及混淆首次使用位置，([声明语句, 行号], [声明语句, 行号])
+    useFPosDiff: Tuple[Optional[Tuple[str, int]], Optional[Tuple[str, int]]] 
 
 
 def format_func(codefunc:str, lang:str) -> str:
@@ -137,26 +137,34 @@ def field_formatter(entity: Any, field) -> str:
     name = field.name
     value = getattr(entity, name)
 
+    #!对renameableEntity实体
     if name == "scope" and isinstance(value, list):
         return f"  - scope: {' -> '.join(value)}"
-
     elif name == "modifiers" and value:
         return f"  - modifiers: {', '.join(value)}"
-
     elif name == "decPos":
         return (
             f"  - declared at line {value[1]}: {value[0]}"
             if value else
             "  - declared at: [unknown]"
         )
-
     elif name == "useFPos":
         return (
             f"  - first used at line {value[1]}: {value[0]}"
             if value else
             "  - first used at: [not found]"
         )
-
+    #!对diffTag1_2实体
+    elif name == "decPosDiff":
+        if value[0] and value[1]:
+            return f"  - declared at line: {value[0][1]}: {value[0][0]}\n    →obfuscated to line {value[1][1]}: {value[1][0]}"
+        else:
+            return "  - declared at: [unknown]"
+    elif name == "useFPosDiff":
+        if value[0] and value[1]:
+            return f"  - first used at line: {value[0][1]}: {value[0][0]}\n    →obfuscated to line {value[1][1]}: {value[1][0]}"
+        else:
+            return "  - first used at: [unknown]"
     else:
         return f"  - {name}: {value}"
 
