@@ -1,8 +1,9 @@
 import os
 import pickle
 import json
-import pandas as pd
+from .obfusDiffTools.funcReg import tagDiff
 from .obfusDiffTools.reEnt import *
+from .obfusDiffTools.varPos import *
 from .format import *
 from tree_sitter import Language, Parser
 from langchain.schema import Document
@@ -67,19 +68,17 @@ def save_documents(documents: List[Document], file_path: str, format: str = "pkl
     
 def struct_doc(lang:Literal["java", "cpp", "js"], 
                raw_name:str, 
-               doc_name:str,
                obfus_type:ObfusType):
     # 获取当前脚本的绝对路径
     script_path = os.path.abspath(__file__)
     root = os.path.dirname(os.path.dirname(os.path.dirname(script_path)))
     os.chdir(root)
     # 加载 parser
-    LANGUAGE = Language('build/languages.so', lang)
-    parser = Parser()
-    parser.set_language(LANGUAGE)
+    wparser = WParser(lang)
     
     raw_json_dir = "./jsonData/raw"
     categorized_json_dir = "./jsonData/categorized"
+    doc_name = f"{obfus_type.name}.pkl"
     
     json_path = os.path.join(raw_json_dir, raw_name)
     dest_path = os.path.join(categorized_json_dir, doc_name)
@@ -103,7 +102,7 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
         format_origin = format_func(json_data["code"], lang)
         format_obfus = format_func(json_data["after_obfus"], lang)
         
-        diffs = diffEntities_tag1_1(parser, format_origin, format_obfus)
+        diffs = tagDiff(obfus_type.name, wparser, format_origin, format_obfus)
         
         if not diffs:
             continue
@@ -133,18 +132,17 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
     suffix = Path(doc_name).suffix.lstrip('.') 
     save_documents(db_content, dest_path, format=suffix)
     
-def doc2embedData(doc_name:str):
+def doc2embedData(obfus_type:ObfusType):
     # 获取当前脚本的绝对路径
     script_path = os.path.abspath(__file__)
     root = os.path.dirname(os.path.dirname(os.path.dirname(script_path)))
     os.chdir(root)
     doc_dir = "./jsonData/categorized"
+    doc_name = f"{obfus_type.name}.pkl"
     doc_path = os.path.join(doc_dir, doc_name)
-    tag = Path(doc_path).stem
     with open(doc_path, 'rb') as f:
         documents = pickle.load(f)
     dest_dir = os.path.join(doc_dir, f"{documents[0].metadata['obfus_level']}")
-    dest_dir = os.path.join(doc_dir, "tag1_1")
     os.makedirs(dest_dir, exist_ok=True)
     
     width = len(str(len(documents)))  # 计算文件名宽度
@@ -174,6 +172,6 @@ def doc2embedData(doc_name:str):
         
         full_content = "\n".join(lines)
         
-        file_name = f"{tag}_{i:0{width}}.txt"
+        file_name = f"{obfus_type.name}_{i:0{width}}.txt"
         with open(os.path.join(dest_dir, file_name), "w", encoding="utf-8") as f:
             f.write(full_content)

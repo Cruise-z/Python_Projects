@@ -125,8 +125,8 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                 scope=list(scope_stack),
                 start=fn_name_node.start_byte,
                 end=fn_name_node.end_byte,
-                dec_pos=(code, line),
-                use_fpos=None
+                decPos=(code, line),
+                useFPos=None
             )
             
             func_name.append(entity)
@@ -151,8 +151,8 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                                 scope=list(scope_stack),
                                 start=name_node.start_byte,
                                 end=name_node.end_byte,
-                                dec_pos=(code, line),
-                                use_fpos=None
+                                decPos=(code, line),
+                                useFPos=None
                             )
                             param_names.append(entity)
                             declared_entities[(entity.entity, tuple(scope_stack))] = entity
@@ -182,8 +182,8 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                             scope=list(scope_stack),
                             start=name_node.start_byte,
                             end=name_node.end_byte,
-                            dec_pos=(code, line),
-                            use_fpos=None
+                            decPos=(code, line),
+                            useFPos=None
                         )
                         local_var_names.append(entity)
                         declared_entities[(entity.entity, tuple(scope_stack))] = entity
@@ -237,8 +237,8 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                             scope=list(scope_stack),
                             start=name_node.start_byte,
                             end=name_node.end_byte,
-                            dec_pos=(code, line),
-                            use_fpos=None
+                            decPos=(code, line),
+                            useFPos=None
                         )
                         catch_params.append(entity)
                         declared_entities[(entity.entity, tuple(scope_stack))] = entity

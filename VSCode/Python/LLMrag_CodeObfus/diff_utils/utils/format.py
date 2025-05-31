@@ -36,11 +36,11 @@ class renameableEntity:
     scope: List[str]              # 作用域，如 method_declaration / parameter / local
     start: int                    # 起始字节位置
     end: int                      # 结束字节位置
-    dec_pos: Optional[Tuple[str, int]] # 声明位置，(声明语句, 行号)
-    use_fpos: Optional[Tuple[str, int]] # 首次使用位置，(使用语句, 行号)
+    decPos: Optional[Tuple[str, int]] # 声明位置，(声明语句, 行号)
+    useFPos: Optional[Tuple[str, int]] # 首次使用位置，(使用语句, 行号)
     
     def __str__(self):
-        return f"{self.kind} '{self.entity}' ({self.scope}, {self.type}) @ {self.start}-{self.end} {self.dec_pos} first used at {self.use_fpos}"
+        return f"{self.kind} '{self.entity}' ({self.scope}, {self.type}) @ {self.start}-{self.end} {self.decPos} first used at {self.useFPos}"
 
 @dataclass
 class diffTag1_1:
@@ -58,11 +58,15 @@ class diffTag1_2:
     """
     用于存储混淆等级1.2的差异信息。
     """
-    entity: str               # 实体名差异
+    entity: str               # 实体名
     kind: str                 # 类型，如 function / parameter / local_variable
     type: Optional[str]       # 数据类型，如 void / int / String 等
     modifiers: List[str]      # 修饰符，如 ["public", "static"]
     scope: List[str]          # 原始作用域路径，如 method_declaration / parameter / local
+    oriDecPos: Optional[Tuple[str, int]]  # 原始声明位置，(声明语句, 行号)
+    newDecPos: Optional[Tuple[str, int]]  # 混淆后声明位置，(声明语句, 行号)
+    oriUseFPos: Optional[Tuple[str, int]]  # 原始首次使用位置，(使用语句, 行号)
+    newUseFPos: Optional[Tuple[str, int]]  # 混淆后首次使用位置，(使用语句, 行号)
 
 
 def format_func(codefunc:str, lang:str) -> str:
@@ -139,14 +143,14 @@ def field_formatter(entity: Any, field) -> str:
     elif name == "modifiers" and value:
         return f"  - modifiers: {', '.join(value)}"
 
-    elif name == "dec_pos":
+    elif name == "decPos":
         return (
             f"  - declared at line {value[1]}: {value[0]}"
             if value else
             "  - declared at: [unknown]"
         )
 
-    elif name == "use_fpos":
+    elif name == "useFPos":
         return (
             f"  - first used at line {value[1]}: {value[0]}"
             if value else
