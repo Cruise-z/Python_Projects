@@ -2,12 +2,11 @@ import os
 import pickle
 import json
 import pandas as pd
-from .reEnt import *
+from .obfusDiffTools.reEnt import *
 from .format import *
 from tree_sitter import Language, Parser
 from langchain.schema import Document
-from typing import List
-from typing import Literal
+from typing import List, Literal
 from tqdm import tqdm
 from pathlib import Path
 from io import StringIO
@@ -104,7 +103,7 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
         format_origin = format_func(json_data["code"], lang)
         format_obfus = format_func(json_data["after_obfus"], lang)
         
-        diffs = compare_all_entities(parser, format_origin, format_obfus)
+        diffs = diffEntities_tag1_1(parser, format_origin, format_obfus)
         
         if not diffs:
             continue

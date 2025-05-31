@@ -47,11 +47,23 @@ class diffTag1_1:
     """
     用于存储混淆等级1.1的差异信息。
     """
-    entity: str               # 函数名差异
+    entity: str               # 实体名差异
     kind: str                 # 类型，如 function / parameter / local_variable
     type: Optional[str]       # 数据类型，如 void / int / String 等
     modifiers: List[str]      # 修饰符，如 ["public", "static"]
     scope: List[str]          # 原始作用域路径，如 method_declaration / parameter / local
+
+@dataclass
+class diffTag1_2:
+    """
+    用于存储混淆等级1.2的差异信息。
+    """
+    entity: str               # 实体名差异
+    kind: str                 # 类型，如 function / parameter / local_variable
+    type: Optional[str]       # 数据类型，如 void / int / String 等
+    modifiers: List[str]      # 修饰符，如 ["public", "static"]
+    scope: List[str]          # 原始作用域路径，如 method_declaration / parameter / local
+
 
 def format_func(codefunc:str, lang:str) -> str:
     """

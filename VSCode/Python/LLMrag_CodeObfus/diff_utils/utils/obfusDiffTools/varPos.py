@@ -1,9 +1,11 @@
-from .format import *
-from .code_analysis.ast2inf import *
-from .code_analysis.infProcess import *
+from .funcReg import register
+from ..format import *
+from ..codeAnalysis.ast2inf import *
+from ..codeAnalysis.infProcess import *
 
-# !混淆等级1.1: 可命名实体随机化重命名
-def compare_all_entities(wparser: WParser, ori_fcode: str, obf_fcode: str) -> list:
+# !混淆等级1.2: 随机化变量声明位置
+@register("tag1_2")
+def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> list:
     key_list = ["kind", "type", "modifiers", "scope"]
     matched_entities = get_matched_entities(wparser, ori_fcode, obf_fcode, key_list)
     

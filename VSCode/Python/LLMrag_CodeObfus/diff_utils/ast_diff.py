@@ -13,9 +13,9 @@ if __name__ == '__main__':
     
     # doc2embedData("tag1_1.pkl")
     
-    code1 = "public OAuth2ClientConfigurer<HttpSecurity> oauth2Client() throws Exception {\n\t\tOAuth2ClientConfigurer<HttpSecurity> configurer = getOrApply(new OAuth2ClientConfigurer<>());\n\t\tthis.postProcess(configurer);\n\t\treturn configurer;\n\t}"
+    code1 = "@Subscribe(sticky = true, threadMode = ThreadMode.MAIN)\n    public void onEventMainThread(MediaEvent event) {\n        RTEditText editor = mEditors.get(mActiveEditor);\n        RTMedia media = event.getMedia();\n        if (editor != null && media instanceof RTImage) {\n            insertImage(editor, (RTImage) media);\n            EventBus.getDefault().removeStickyEvent(event);\n            mActiveEditor = Integer.MAX_VALUE;\n        }\n    }"
 
-    code2 = "public OAuth2ClientConfigurer<HttpSecurity> WhfqbiwFunc() throws Exception {\n    OAuth2ClientConfigurer<HttpSecurity> styleable = getOrApply(new OAuth2ClientConfigurer<>());\n    this.postProcess(styleable);\n    return styleable;\n}"
+    code2 = "@Subscribe(sticky = true, threadMode = ThreadMode.MAIN)\npublic void A_aFzyiKNg_Zas_FDEZgL(MediaEvent Triangulations) {\n    RTEditText Editor = mEditors.get(mActiveEditor);\n    RTMedia Media = Triangulations.getMedia();\n    if (Editor != null && Media instanceof RTImage) {\n        insertImage(Editor, (RTImage) Media);\n        EventBus.getDefault().removeStickyEvent(Triangulations);\n        mActiveEditor = Integer.MAX_VALUE;\n    }\n}"
     
     LANGUAGE = 'java'
     wparser = WParser(LANGUAGE)
@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     
     
-    diff = compare_all_entities(wparser, format_code1, format_code2)
+    diff = tagDiff("tag1_2", wparser, format_code1, format_code2)
     
     print(diff)
     
