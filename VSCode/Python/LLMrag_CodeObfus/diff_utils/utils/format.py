@@ -66,6 +66,8 @@ class diffTag1_2:
     scope: List[str]          # 原始作用域路径，如 method_declaration / parameter / local
     # 原始及混淆后声明位置，([声明语句, 行号], [声明语句, 行号])
     decPosDiff: Tuple[Optional[Tuple[str, int]], Optional[Tuple[str, int]]]
+    # 原始及混淆首次初始化位置，([初始化语句, 行号], [初始化语句, 行号])
+    initPosDiff: Tuple[Optional[Tuple[str, int]], Optional[Tuple[str, int]]] 
     # 原始及混淆首次使用位置，([声明语句, 行号], [声明语句, 行号])
     useFPosDiff: Tuple[Optional[Tuple[str, int]], Optional[Tuple[str, int]]] 
 
@@ -167,6 +169,11 @@ def field_formatter(entity: Any, field) -> str:
             return f"  - declared at line: {value[0][1]}: {value[0][0]}\n    →obfuscated to line {value[1][1]}: {value[1][0]}"
         else:
             return "  - declared at: [unknown]"
+    elif name == "initPosDiff":
+        if value[0] and value[1]:
+            return f"  - first init at line: {value[0][1]}: {value[0][0]}\n    →obfuscated to line {value[1][1]}: {value[1][0]}"
+        else:
+            return "  - first init at: [unknown]"
     elif name == "useFPosDiff":
         if value[0] and value[1]:
             return f"  - first used at line: {value[0][1]}: {value[0][0]}\n    →obfuscated to line {value[1][1]}: {value[1][0]}"

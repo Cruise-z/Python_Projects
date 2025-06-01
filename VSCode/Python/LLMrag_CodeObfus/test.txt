@@ -1,29 +1,24 @@
  1 | public class Example {
- 2 |     public void testFunction(int input) {
- 3 |         int a = 10;
- 4 |         int b;
- 5 |         b = input;
- 6 |         int c = 1;
- 7 |         c += 2;
- 8 |         int d = 0;
- 9 |         ++d;
-10 |         int e = 42;
-11 | 
-12 |         int f;
-13 |         System.out.println(f);
-14 | 
-15 |         int g;
-16 |         g = 100;
-17 |         int h = g + 1;
-18 |     }
-19 | }
-
-1 | public class Example {
-2 |     public void testFunction(int input) {
-3 |         int x = 5;
-4 |         int y;
-5 |         y = 6;
-6 |         int z = 7 + 8;
-7 |         int a, b = 2;
-8 |     }
-9 | }
+ 2 |     protected final void fastPathOrderedEmit(U value, boolean delayError, Disposable disposable) {
+ 3 |         final Observer<? super V> observer;
+ 4 |         observer = downstream;
+ 5 |         final SimplePlainQueue<U> q;
+ 6 |         q = queue;
+ 7 |         if (wip.get() == 0 && wip.compareAndSet(0, 1)) {
+ 8 |             if (q.isEmpty()) {
+ 9 |                 accept(observer, value);
+10 |                 if (leave(-1) == 0) {
+11 |                     return;
+12 |                 }
+13 |             } else {
+14 |                 q.offer(value);
+15 |             }
+16 |         } else {
+17 |             q.offer(value);
+18 |             if (!enter()) {
+19 |                 return;
+20 |             }
+21 |         }
+22 |         QueueDrainHelper.drainLoop(q, observer, delayError, disposable, this);
+23 |     }
+24 | }

@@ -22,6 +22,7 @@ def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> lis
                     modifiers=ori.modifiers,
                     scope=generate_scope_diff(ori.scope, obf.scope),
                     decPosDiff=(ori.decPos, obf.decPos),
+                    initPosDiff=(ori.initPos, obf.initPos),
                     useFPosDiff=(ori.useFPos, obf.useFPos),
                 )
                 diffs.append(diff)
