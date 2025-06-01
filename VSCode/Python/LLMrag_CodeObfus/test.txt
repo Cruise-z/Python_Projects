@@ -1,4 +1,29 @@
-'diff': '[local_variable] observable -> observable\n  - type: Observable<T>\n  - modifiers: final\n  - scope: Class Example -> Function observeOn\n  
-- declared at line: 4: final Observable<T> observable = co.observeOn(scheduler);\n    →obfuscated to line 4: final Observable<T> observable;\n  
-- first used at line: 5: return RxJavaPlugins.onAssembly(new Replay<T>(co, observable));\n    
-→obfuscated to line 5: observable = co.observeOn(scheduler);\n'}
+ 1 | public class Example {
+ 2 |     public void testFunction(int input) {
+ 3 |         int a = 10;
+ 4 |         int b;
+ 5 |         b = input;
+ 6 |         int c = 1;
+ 7 |         c += 2;
+ 8 |         int d = 0;
+ 9 |         ++d;
+10 |         int e = 42;
+11 | 
+12 |         int f;
+13 |         System.out.println(f);
+14 | 
+15 |         int g;
+16 |         g = 100;
+17 |         int h = g + 1;
+18 |     }
+19 | }
+
+1 | public class Example {
+2 |     public void testFunction(int input) {
+3 |         int x = 5;
+4 |         int y;
+5 |         y = 6;
+6 |         int z = 7 + 8;
+7 |         int a, b = 2;
+8 |     }
+9 | }

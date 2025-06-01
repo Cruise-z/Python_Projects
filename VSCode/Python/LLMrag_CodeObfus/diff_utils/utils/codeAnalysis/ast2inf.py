@@ -80,23 +80,65 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
 
         return f"{node_type}@line:{line}"
     
-    def find_first_usage_in_node(entity, name, root_node):
+    def find_InitUse_Fpos_in_node(entity, name, root_node):
         """
-        在指定语法块 node 中查找 name 的首次使用，避免作用域穿越。
+        在指定语法块node中查找变量首次初始化位置和首次真正使用(非左值），同时避免作用域穿越。
         """
         def recurse(node):
-            if node.type == "identifier" and get_node_text(node) == name:
-                if not (entity.start <= node.start_byte <= entity.end):
-                    line = node.start_point[0] + 1
-                    text = source_lines[line - 1].strip() if line - 1 < len(source_lines) else ""
+            # 🎯 特殊处理赋值语句
+            if node.type == "assignment_expression":
+                left = node.child_by_field_name("left")
+                right = node.child_by_field_name("right")
+                operator_node = node.child_by_field_name("operator")
+                operator_str = get_node_text(operator_node) if operator_node else "="
+
+                # 左值匹配当前变量
+                if left and left.type == "identifier" and get_node_text(left) == name:
+                    # 👉 情况1: 普通赋值 (=) → 初始化
                     #!更改实体字段名后在这里也需要更改
-                    entity.useFPos = (text, line)
-                    return True  # 提前返回
+                    if operator_str == "=" and right and entity.initPos is None:
+                        line = right.start_point[0] + 1
+                        text = source_lines[line - 1].strip() if line - 1 < len(source_lines) else ""
+                        entity.initPos = (text, line)
+
+                    # 👉 情况2: 复合赋值 (+=, -=...) → 使用但不是初始化
+                    elif operator_str in {"*=", "+=", "-=", "/=", "%=", "&=", "|=", "^=", ">>=", "<<=", ">>>="}:
+                        #!更改实体字段名后在这里也需要更改
+                        if entity.useFPos is None:
+                            line = node.start_point[0] + 1
+                            text = source_lines[line - 1].strip() if line - 1 < len(source_lines) else ""
+                            entity.useFPos = (text, line)
+
+                    return False  # 无论哪种赋值，都不算使用（除非是右值）
+
+            # 🎯 排除一元 ++ / -- 自增自减（写操作，不算使用）
+            if node.type == "unary_expression":
+                operand = node.child_by_field_name("argument")
+                operator_node = node.child_by_field_name("operator")
+                operator = get_node_text(operator_node) if operator_node else ""
+                if operand and operand.type == "identifier" and get_node_text(operand) == name:
+                    if operator in ("++", "--"):
+                        return False
+
+            # ✅ 真正的 identifier 使用（排除声明本身）
+            if node.type == "identifier" and get_node_text(node) == name:
+                # 跳过声明语句本身
+                if not (entity.start <= node.start_byte <= entity.end):
+                    #!更改实体字段名后在这里也需要更改
+                    if entity.useFPos is None:
+                        line = node.start_point[0] + 1
+                        text = source_lines[line - 1].strip() if line - 1 < len(source_lines) else ""
+                        entity.useFPos = (text, line)
+                        return True  # 找到首次使用，提前返回
+
+            # 深度优先递归访问子节点
             for child in node.children:
                 if recurse(child):
                     return True
             return False
+
         recurse(root_node)
+
     
     def traverse(node, parent=None):
         if node.type in {
@@ -127,6 +169,7 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                 start=fn_name_node.start_byte,
                 end=fn_name_node.end_byte,
                 decPos=(code, line),
+                initPos=None,
                 useFPos=None
             )
             
@@ -153,6 +196,7 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                                 start=name_node.start_byte,
                                 end=name_node.end_byte,
                                 decPos=(code, line),
+                                initPos=None,
                                 useFPos=None
                             )
                             param_names.append(entity)
@@ -162,7 +206,7 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
             body_node = node.child_by_field_name("body")
             if body_node:
                 for entity in param_names[-len(parameters.named_children):]:
-                    find_first_usage_in_node(entity, entity.entity, body_node)
+                    find_InitUse_Fpos_in_node(entity, entity.entity, body_node)
 
         # 局部变量声明
         if node.type == "local_variable_declaration":
@@ -173,6 +217,15 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                     if name_node:
                         line = name_node.start_point[0] + 1
                         code = source_lines[line - 1].strip()
+                        
+                        # 提取初始化位置：如果有初始化值，就用整个声明句的起始位置
+                        init_node = child.child_by_field_name("value")
+                        init_pos = None
+                        if init_node:
+                            decl_line = child.start_point[0] + 1
+                            decl_code = source_lines[decl_line - 1].strip()
+                            init_pos = (decl_code, decl_line)
+                        
                         entity = renameableEntity(
                             entity=get_node_text(name_node),
                             kind="local_variable",
@@ -184,13 +237,14 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                             start=name_node.start_byte,
                             end=name_node.end_byte,
                             decPos=(code, line),
+                            initPos=init_pos,
                             useFPos=None
                         )
                         local_var_names.append(entity)
                         declared_entities[(entity.entity, tuple(scope_stack))] = entity
                         
                         parent_block = parent if parent else root
-                        find_first_usage_in_node(entity, entity.entity, parent_block)
+                        find_InitUse_Fpos_in_node(entity, entity.entity, parent_block)
         
         # 异常捕获参数
         if node.type == "catch_clause":
@@ -239,6 +293,7 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                             start=name_node.start_byte,
                             end=name_node.end_byte,
                             decPos=(code, line),
+                            initPos=None,
                             useFPos=None
                         )
                         catch_params.append(entity)
@@ -246,7 +301,7 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                         
                         catch_body = next((c for c in reversed(node.children) if c.is_named and c.type == "block"), None)
                         if catch_body:
-                            find_first_usage_in_node(entity, entity.entity, catch_body)
+                            find_InitUse_Fpos_in_node(entity, entity.entity, catch_body)
 
         # 剩下变量随后补齐
         for child in node.children:

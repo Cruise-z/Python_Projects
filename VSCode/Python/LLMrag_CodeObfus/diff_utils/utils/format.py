@@ -37,6 +37,7 @@ class renameableEntity:
     start: int                    # 起始字节位置
     end: int                      # 结束字节位置
     decPos: Optional[Tuple[str, int]] # 声明位置，(声明语句, 行号)
+    initPos: Optional[Tuple[str, int]] # 初始化位置，(初始化语句, 行号)
     useFPos: Optional[Tuple[str, int]] # 首次使用位置，(使用语句, 行号)
     
     def __str__(self):
@@ -147,6 +148,12 @@ def field_formatter(entity: Any, field) -> str:
             f"  - declared at line {value[1]}: {value[0]}"
             if value else
             "  - declared at: [unknown]"
+        )
+    elif name == "initPos":
+        return (
+            f"  - initialized at line {value[1]}: {value[0]}"
+            if value else
+            "  - initialized at: [unknown]"
         )
     elif name == "useFPos":
         return (
