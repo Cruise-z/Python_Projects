@@ -317,8 +317,24 @@ python 2_eval_obfus.py     --checkpoint_path ./ckpts/4bit_gru_srcmarker_42_csn_j
   | <img src="./writeup.assets/image-20250408100250039.png" alt="image-20250408100250039" style="zoom:50%;" /> |
   | ------------------------------------------------------------ |
 
-
 #### 6.01: RAG+Prompt测试结果
+
+对于混淆模式`Tag1_1`和`Tag1_2`：
+
+```python
+class ObfusType(Enum):
+    tag1_1 = {
+        "id": "1-1",
+        "desc": "Function nameable entity randomization renaming.",
+        "content": content_tag1_1
+    }
+    
+    tag1_2 = {
+        "id": "1-2",
+        "desc": "Named local variable entity declaration position randomization.", 
+        "content": content_tag1_2
+    }
+```
 
 输入自己认为很概括的prompt得到的识别模式以及混淆的效果并不是特别好：
 

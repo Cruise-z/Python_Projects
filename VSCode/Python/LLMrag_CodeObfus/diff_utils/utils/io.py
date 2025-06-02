@@ -96,14 +96,14 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
                      unit="line"):
         json_data = json.loads(line)
         
-        if json_data["after_obfus"] == "":
-        # if json_data["after_watermark"] == "":
+        # if json_data["after_obfus"] == "":
+        if json_data["after_watermark"] == "":
             continue
         
         try:
             format_origin = format_func(json_data["code"], lang)
-            format_obfus = format_func(json_data["after_obfus"], lang)
-            # format_obfus = format_func(json_data["after_watermark"], lang)
+            # format_obfus = format_func(json_data["after_obfus"], lang)
+            format_obfus = format_func(json_data["after_watermark"], lang)
         except RuntimeError as e:
             continue
         
@@ -122,8 +122,8 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
             "obfus_level": obfus_type.name,
             "obfus_desc": obfus_type.desc,
             "original_code": json_data["code"],
-            "obfuscated_code": json_data["after_obfus"],
-            # "obfuscated_code": json_data["after_watermark"],
+            # "obfuscated_code": json_data["after_obfus"],
+            "obfuscated_code": json_data["after_watermark"],
             "diff": "\n".join(format_entity(diff) for diff in diffs),
         }
         

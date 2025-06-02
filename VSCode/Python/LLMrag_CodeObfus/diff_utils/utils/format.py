@@ -36,20 +36,20 @@ Typical changes include:
 This strategy is effective at eliminating semantic clues carried in identifier names, while maintaining structural and operational correctness of the code.
 """
 content_tag1_2 = """
-This obfuscation type targets named local variable declarations within a function. It performs randomized reordering of their declaration positions, while strictly preserving semantic correctness.
+This obfuscation type targets named local variable declarations within a function. It performs randomized reordering of their declaration and initialization positions, while strictly preserving semantic correctness and program behavior.
 
 The transformation is governed by the following constraints:
-- The declaration must remain **within the lexical scope** of the function or block in which it was originally declared (e.g., inside a `try`, `if`, or `loop` block).
-- The declaration must occur **before the variable's first usage** in the control flow.
-- The initialization (assignment) may be split from the declaration but must also precede the first usage.
-- No changes are allowed to variable names, types, or modifiers.
+- Both **declaration** and **initialization** must remain strictly **within the lexical scope** in which the variable was originally declared (e.g., inside a `try`, `if`, or `loop` block).
+- The **declaration must appear before the initialization**, and the **initialization must appear before the variable’s first usage** in the control flow.
+- If a variable is declared and initialized together (e.g., `int i = 0;`), they may be **split** into separate statements (e.g., `int i; i = 0;`).
+- Variable names, types, and modifiers **must remain unchanged**.
 
-This form of obfuscation aims to disrupt tools or models that rely on the proximity of declaration and initialization, without changing the runtime behavior of the program.
+This form of obfuscation aims to confuse tools or models that rely on the typical proximity between declaration, initialization, and usage, without changing the runtime behavior of the program.
 
 Typical changes include:
-- Separating declaration and initialization into different lines (e.g., transforming `int i = 0;` into `int i; i = 0;`).
+- Splitting `declaration + initialization` into separate lines (e.g., transforming `int i = 0;` into `int i; i = 0;`).
 - Relocating local variable declarations to earlier positions within their valid lexical scope, as long as they occur before the variable's first usage in the control flow.
-- Moving declarations either to the beginning of the function or closer to their first usage, based on the randomization strategy.
+- Moving variable `declarations` and/or `initializations` either to the beginning of the function or closer to their first usage, based on the randomization strategy, while ensuring that **declarations precede initializations**, and both occur **before the first usage within their valid lexical scope**.
 - Splitting or merging declarations of multiple variables of the same type (e.g., `int i, j;` vs. `int i; int j;`), provided their scope and usage order remain valid.
 - Ensuring that all variable references, types, and modifiers remain unchanged, so the semantic behavior of the program is fully preserved.
 
@@ -64,7 +64,7 @@ class ObfusType(Enum):
     
     tag1_2 = {
         "id": "1-2",
-        "desc": "Named local variable entity declaration position randomization.", 
+        "desc": "Randomized repositioning of variable declarations and initializations within their lexical scope, ensuring that declarations precede initializations, and both precede the first usage in the control flow.", 
         "content": content_tag1_2
     }
     
