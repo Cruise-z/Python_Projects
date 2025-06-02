@@ -6,17 +6,66 @@ import subprocess
 import textwrap
 import re
 
+content_tag1_1 = """
+This obfuscation type targets the names of user-defined symbols within a function or method. It performs randomized renaming of function (method) names, parameter names, and local variable names, while strictly preserving program semantics.
+
+The transformation is governed by the following constraints:
+- All renamed identifiers must be semantically equivalent to their originals, with no change to logic, behavior, or type correctness.
+- Function names may be renamed as long as all corresponding call sites are updated consistently.
+- Parameter names can be replaced with arbitrary but valid alternatives, provided all references within the function body are correctly updated.
+- Local variable names may be renamed, individually or in batches, with consistent substitutions across all reads and writes within their scope.
+- Renamed identifiers must not collide with existing global names, imported symbols, or scoped declarations.
+
+Identifier names can be generated in different styles to increase variability or mimic realistic coding practices. These include:
+- Completely random but syntactically valid identifiers (e.g., `a9fG_23`), ensuring they comply with language-specific naming rules (e.g., not starting with a digit).
+- Patterned or style-based naming conventions such as:
+  - `camelCase` (e.g., `processedData`)
+  - `PascalCase` (e.g., `ProcessedData`)
+  - `snake_case` (e.g., `processed_data`)
+  - `_underscore_init` (e.g., `_tempVar`)
+These styles may be applied uniformly or mixed randomly to confuse naming-based heuristics or stylistic pattern recognition.
+
+This form of obfuscation aims to disrupt name-based heuristics in static analysis, reverse engineering, or learning-based models, without altering the runtime behavior of the program.
+
+Typical changes include:
+- Renaming function names (e.g., `calculateSum` → `f_XY21`) while updating all invocation points.
+- Changing parameter names to opaque identifiers (e.g., `count` → `a7_b`) without modifying any logic.
+- Replacing descriptive local variable names with randomized or stylized alternatives, preserving all references.
+- Ensuring consistent, scope-aware symbol resolution to avoid shadowing or leakage issues.
+
+This strategy is effective at eliminating semantic clues carried in identifier names, while maintaining structural and operational correctness of the code.
+"""
+content_tag1_2 = """
+This obfuscation type targets named local variable declarations within a function. It performs randomized reordering of their declaration positions, while strictly preserving semantic correctness.
+
+The transformation is governed by the following constraints:
+- The declaration must remain **within the lexical scope** of the function or block in which it was originally declared (e.g., inside a `try`, `if`, or `loop` block).
+- The declaration must occur **before the variable's first usage** in the control flow.
+- The initialization (assignment) may be split from the declaration but must also precede the first usage.
+- No changes are allowed to variable names, types, or modifiers.
+
+This form of obfuscation aims to disrupt tools or models that rely on the proximity of declaration and initialization, without changing the runtime behavior of the program.
+
+Typical changes include:
+- Separating declaration and initialization into different lines (e.g., transforming `int i = 0;` into `int i; i = 0;`).
+- Relocating local variable declarations to earlier positions within their valid lexical scope, as long as they occur before the variable's first usage in the control flow.
+- Moving declarations either to the beginning of the function or closer to their first usage, based on the randomization strategy.
+- Splitting or merging declarations of multiple variables of the same type (e.g., `int i, j;` vs. `int i; int j;`), provided their scope and usage order remain valid.
+- Ensuring that all variable references, types, and modifiers remain unchanged, so the semantic behavior of the program is fully preserved.
+
+This strategy is subtle but effective at confusing static analyzers and semantic models that expect tight locality between variable lifecycle events.
+"""
 class ObfusType(Enum):
     tag1_1 = {
         "id": "1-1",
         "desc": "Function nameable entity randomization renaming.",
-        "content": "Randomly rename function (method) names, parameter names, and various local variable names within the function while preserving semantics."
+        "content": content_tag1_1
     }
     
     tag1_2 = {
         "id": "1-2",
         "desc": "Named local variable entity declaration position randomization.", 
-        "content": "Randomize the declared positions of local variable entities that can be named within a function, while limiting their positions to before the variable's first use and within its scope."
+        "content": content_tag1_2
     }
     
     @property

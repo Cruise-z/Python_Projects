@@ -7,10 +7,10 @@ from tqdm import tqdm
 
 if __name__ == '__main__':
     struct_doc('java', 
-               "4bit_gru_srcmarker_42_csn_java_tag1_2.jsonl", 
-               ObfusType.tag1_2)
+               "4bit_gru_srcmarker_42_csn_java_tag1_1.jsonl", 
+               ObfusType.tag1_1)
     
-    doc2embedData(ObfusType.tag1_2)
+    doc2embedData(ObfusType.tag1_1)
     
     # code1 = "protected final void fastPathOrderedEmit(U value, boolean delayError, Disposable disposable) {\n        final Observer<? super V> observer = downstream;\n        final SimplePlainQueue<U> q = queue;\n\n        if (wip.get() == 0 && wip.compareAndSet(0, 1)) {\n            if (q.isEmpty()) {\n                accept(observer, value);\n                if (leave(-1) == 0) {\n                    return;\n                }\n            } else {\n                q.offer(value);\n            }\n        } else {\n            q.offer(value);\n            if (!enter()) {\n                return;\n            }\n        }\n        QueueDrainHelper.drainLoop(q, observer, delayError, disposable, this);\n    }"
 
