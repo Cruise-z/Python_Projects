@@ -165,6 +165,8 @@ def doc2embedData(obfus_type:ObfusType):
         if metadata.get("obfus_desc"):
             lines.append(f"[obfus_desc] {metadata['obfus_desc']}")
         lines.append(f"[content] {content}\n\n")
+        if metadata.get("language"):
+            lines.append(f"[code_language] {metadata['language']}")
         if metadata.get("original_code"):
             format_origin = format_func(metadata['original_code'], metadata["language"])
             attach_lineNum_ori = attach_lineNum_func(format_origin)
