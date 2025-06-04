@@ -319,6 +319,72 @@ python 2_eval_obfus.py     --checkpoint_path ./ckpts/4bit_gru_srcmarker_42_csn_j
 
 #### 6.01: RAG+Prompt测试结果
 
+##### 较为简单的混淆模式
+
+对于
+
+- `Expr Update Expr. Styles for increment or decrement expr.: i++;, ++i, i+=1;, i=i+1;`
+- `Expr Loop Condition Conditions for inifinite loops: while(true) or while(1)`
+
+这两种混淆方式，感觉不需要利用`rag`，直接使用`prompt`即可：
+
+```prompt
+## **Expression Update Obfuscation**
+
+ Please identify all **increment and decrement expressions** in the code below and replace each with a **semantically equivalent alternative**, chosen randomly from the valid forms listed below.
+
+### Equivalent Forms:
+ **Increment Forms (i.e., increasing a variable by 1):**
+ * `i++`
+ * `++i`
+ * `i += 1`
+ * `i = i + 1`
+ **Decrement Forms (i.e., decreasing a variable by 1):**
+ * `i--`
+ * `--i`
+ * `i -= 1`
+ * `i = i - 1`
+ 
+### Replacement Instructions:
+ 1. Only transform expressions that appear as **standalone statements**, not inside larger expressions (e.g., not within `return i++` or `if (++i < 10)`).
+ 2. For each matched expression, select a random alternative from the equivalent group above.
+ 3. Do **not** modify unrelated code or introduce any side effects.
+ 4. The transformed code **must** behave identically to the original.
+ 
+[original_code]
+//write original code
+
+Please provide the obfuscated code according to the obfuscation method described above.
+```
+
+```prompt
+## **Infinite Loop Condition Obfuscation**
+
+ Please locate all **infinite loop conditions** in the following code and replace each with a semantically equivalent alternative from the list below.
+
+### Equivalent Infinite Loop Patterns:
+ * `while(true)`
+ * `while(1)`
+ * `for(;;)`
+ * `do { ... } while(true);`
+ * `do { ... } while(1);`
+
+### Replacement Instructions:
+ 1. Replace each infinite loop condition with a randomly chosen form from the above list.
+ 2. If the loop body is already a block (i.e., wrapped in `{ ... }`), you may safely convert it to a `do { ... } while(...)` loop.
+ 3. The loop **must remain infinite** and **preserve its original control flow**.
+ 4. Do **not** modify the content of the loop body or other unrelated parts of the code.
+ 
+[original_code]
+//write original code
+
+Please provide the obfuscated code according to the obfuscation method described above.
+```
+
+
+
+##### 相对复杂的混淆模式
+
 对于混淆模式`Tag1_1`和`Tag1_2`：
 
 ```python
@@ -434,8 +500,6 @@ Typical changes include:
 
 This strategy is effective at eliminating semantic clues carried in identifier names, while maintaining structural and operational correctness of the code.
 
-
-
 [original_code]
 //write original code
 
@@ -469,6 +533,65 @@ This strategy is subtle but effective at confusing static analyzers and semantic
 //write original code
 
 Please provide the obfuscated code according to the obfuscation method described above.
+```
+
+示例代码：
+
+```java
+public static double calculateDiscountedPrice(double originalPrice, int customerLevel) {
+    double discountRate = 0.0;
+
+    if (customerLevel == 1) {
+        discountRate = 0.1;  
+    } else if (customerLevel == 2) {
+        discountRate = 0.15; 
+    } else {
+        discountRate = 0.05; 
+    }
+
+    double discountAmount = originalPrice * discountRate;
+    double finalPrice = originalPrice - discountAmount;
+
+    return finalPrice;
+}
+
+tag1_1
+public static double Func_af9(double originalPrice, int customerLevel) {
+    double _discountRate = 0.0;
+
+    if (customerLevel == 1) {
+        _discountRate = 0.1;  
+    } else if (customerLevel == 2) {
+        _discountRate = 0.15; 
+    } else {
+        _discountRate = 0.05; 
+    }
+
+    double discountAmount = originalPrice * _discountRate;
+    double finalPrice = originalPrice - discountAmount;
+
+    return finalPrice;
+}
+
+tag1_2
+public static double calculateDiscountedPrice(double originalPrice, int customerLevel) {
+    double discountRate;
+
+    if (customerLevel == 1) {
+        discountRate = 0.1;  
+    } else if (customerLevel == 2) {
+        discountRate = 0.15; 
+    } else {
+        discountRate = 0.05; 
+    }
+
+    double discountAmount = originalPrice * discountRate;
+    double finalPrice = originalPrice - discountAmount;
+
+    return finalPrice;
+}
+
+
 ```
 
 
