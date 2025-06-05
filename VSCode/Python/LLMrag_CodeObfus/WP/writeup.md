@@ -476,10 +476,10 @@ This obfuscation type targets the names of user-defined symbols within a functio
 
 The transformation is governed by the following constraints:
 - All renamed identifiers must be semantically equivalent to their originals, with no change to logic, behavior, or type correctness.
-- Function names may be renamed as long as all corresponding call sites are updated consistently.
-- Parameter names can be replaced with arbitrary but valid alternatives, provided all references within the function body are correctly updated.
-- Local variable names may be renamed, individually or in batches, with consistent substitutions across all reads and writes within their scope.
-- Renamed identifiers must not collide with existing global names, imported symbols, or scoped declarations.
+- Function names may be renamed as long as **all corresponding call sites are updated consistently**.
+- Parameter names can be replaced with arbitrary but valid alternatives, provided **all references within the function body are correctly updated**.
+- Local variable names may be renamed, individually or in batches, with **consistent substitutions across all reads and writes** within their scope.
+- Renamed identifiers must **not** collide with existing global names, imported symbols, or scoped declarations.
 
 Identifier names can be generated in different styles to increase variability or mimic realistic coding practices. These include:
 - Completely random but syntactically valid identifiers (e.g., `a9fG_23`), ensuring they comply with language-specific naming rules (e.g., not starting with a digit).
@@ -496,10 +496,13 @@ Typical changes include:
 - Renaming function names (e.g., `calculateSum` → `f_XY21`) while updating all invocation points.
 - Changing parameter names to opaque identifiers (e.g., `count` → `a7_b`) without modifying any logic.
 - Replacing descriptive local variable names with randomized or stylized alternatives, preserving all references.
-- Ensuring consistent, scope-aware symbol resolution to avoid shadowing or leakage issues.
+- Ensuring **consistent, scope-aware symbol resolution** to avoid shadowing or leakage issues.
 
 This strategy is effective at eliminating semantic clues carried in identifier names, while maintaining structural and operational correctness of the code.
 
+
+
+[code_language] java
 [original_code]
 //write original code
 
@@ -556,19 +559,19 @@ public static double calculateDiscountedPrice(double originalPrice, int customer
 }
 
 tag1_1
-public static double Func_af9(double originalPrice, int customerLevel) {
-    double _discountRate = 0.0;
+public static double discountCalculation(double Price, int Level) {
+    double Rate = 0.0;
 
-    if (customerLevel == 1) {
-        _discountRate = 0.1;  
-    } else if (customerLevel == 2) {
-        _discountRate = 0.15; 
+    if (Level == 1) {
+        Rate = 0.1;
+    } else if (Level == 2) {
+        Rate = 0.15;
     } else {
-        _discountRate = 0.05; 
+        Rate = 0.05;
     }
 
-    double discountAmount = originalPrice * _discountRate;
-    double finalPrice = originalPrice - discountAmount;
+    double Amount = Price * Rate;
+    double finalPrice = Price - Amount;
 
     return finalPrice;
 }
@@ -590,7 +593,223 @@ public static double calculateDiscountedPrice(double originalPrice, int customer
 
     return finalPrice;
 }
+```
 
+```java
+public int evaluateExpression(String expr) {
+    Stack<Integer> nums = new Stack<>();
+    Stack<Character> ops = new Stack<>();
+    int n = expr.length();
+    int i = 0;
+
+    while (i < n) {
+        char ch = expr.charAt(i);
+
+        if (Character.isWhitespace(ch)) {
+            i++;
+            continue;
+        }
+
+        if (Character.isDigit(ch)) {
+            int num = 0;
+            while (i < n && Character.isDigit(expr.charAt(i))) {
+                num = num * 10 + (expr.charAt(i) - '0');
+                i++;
+            }
+            nums.push(num);
+        } else if (ch == '(') {
+            ops.push(ch);
+            i++;
+        } else if (ch == ')') {
+            while (ops.peek() != '(') {
+                nums.push(applyOp(ops.pop(), nums.pop(), nums.pop()));
+            }
+            ops.pop(); // Remove '('
+            i++;
+        } else if (ch == '+' || ch == '-' || ch == '*' || ch == '/') {
+            while (!ops.isEmpty() && precedence(ops.peek()) >= precedence(ch)) {
+                nums.push(applyOp(ops.pop(), nums.pop(), nums.pop()));
+            }
+            ops.push(ch);
+            i++;
+        } else {
+            throw new IllegalArgumentException("Invalid character: " + ch);
+        }
+    }
+
+    while (!ops.isEmpty()) {
+        nums.push(applyOp(ops.pop(), nums.pop(), nums.pop()));
+    }
+
+    return nums.pop();
+}
+
+tag1_1
+public int evaluateExpression_$(String _input) {
+    _numStack = new Stack<>();
+    _opStack = new Stack<>();
+    int n = _input.length();
+    int i = 0;
+
+    while (i < n) {
+        char ch = _input.charAt(i);
+
+        if (Character.isWhitespace(ch)) {
+            i++;
+            continue;
+        }
+
+        if (Character.isDigit(ch)) {
+            int num = 0;
+            while (i < n && Character.isDigit(_input.charAt(i))) {
+                num = num * 10 + (_input.charAt(i) - '0');
+                i++;
+            }
+            _numStack.push(num);
+        } else if (ch == '(') {
+            _opStack.push(ch);
+            i++;
+        } else if (ch == ')') {
+            while (!_opStack.isEmpty() && !_opStack.peek().equals('(')) {
+                int op = _opStack.pop();
+                int num2 = _numStack.pop();
+                int num1 = _numStack.pop();
+                _numStack.push(applyOp(op, num1, num2));
+            }
+            _opStack.pop(); // Remove '('
+            i++;
+        } else if (ch == '+' || ch == '-' || ch == '*' || ch == '/') {
+            while (!_opStack.isEmpty() && precedence(_opStack.peek()) >= precedence(ch)) {
+                int op = _opStack.pop();
+                int num2 = _numStack.pop();
+                int num1 = _numStack.pop();
+                _numStack.push(applyOp(op, num1, num2));
+            }
+            _opStack.push(ch);
+            i++;
+        } else {
+            throw new IllegalArgumentException("Invalid character: " + ch);
+        }
+    }
+
+    while (!_opStack.isEmpty()) {
+        int op = _opStack.pop();
+        int num2 = _numStack.pop();
+        int num1 = _numStack.pop();
+        _numStack.push(applyOp(op, num1, num2));
+    }
+
+    return _numStack.pop();
+}
+
+```
+
+改动：将content部分进一步划分：[constraint] [typical changes]
+
+新增：改动过程  [renaming_map]改动锚点
+
+修改后效果还不错
+
+```prompt
+[obfus_level] tag1_1
+[obfus_desc] Function nameable entity randomization renaming.
+[content] 
+This obfuscation type targets the names of user-defined symbols within a function or method. It performs randomized renaming of function (method) names, parameter names, and local variable names, while strictly preserving program semantics.
+
+This form of obfuscation aims to disrupt name-based heuristics in static analysis, reverse engineering, or learning-based models, without altering the runtime behavior of the program.
+
+This strategy is effective at eliminating semantic clues carried in identifier names, while maintaining structural and operational correctness of the code.
+
+
+[constraints] 
+The transformation is governed by the following constraints:
+- All renamed identifiers must be semantically equivalent to their originals, with no change to logic, behavior, or type correctness.
+- Function names may be renamed as long as **all corresponding call sites are updated consistently**.
+- Parameter names can be replaced with arbitrary but valid alternatives, provided **all references within the function body are correctly updated**.
+- Local variable names may be renamed, individually or in batches, with **consistent substitutions across all reads and writes** within their scope.
+- Renamed identifiers must **not** collide with existing global names, imported symbols, or scoped declarations.
+
+[typical_changes] 
+Identifier names can be generated in different styles to increase variability or mimic realistic coding practices. These include:
+- Completely random but syntactically valid identifiers (e.g., `a9fG_23`), ensuring they comply with language-specific naming rules (e.g., not starting with a digit).
+- Patterned or style-based naming conventions such as:
+  - `camelCase` (e.g., `processedData`)
+  - `PascalCase` (e.g., `ProcessedData`)
+  - `snake_case` (e.g., `processed_data`)
+  - `_underscore_init` (e.g., `_tempVar`)
+These styles may be applied uniformly or mixed randomly to confuse naming-based heuristics or stylistic pattern recognition.
+
+Typical changes include:
+- Renaming function names (e.g., `calculateSum` → `f_XY21`) while updating all invocation points.
+- Changing parameter names to opaque identifiers (e.g., `count` → `a7_b`) without modifying any logic.
+- Replacing descriptive local variable names with randomized or stylized alternatives, preserving all references.
+- Ensuring **consistent, scope-aware symbol resolution** to avoid shadowing or leakage issues.
+
+[code_language] java
+[original_code]
+//write original code
+
+Please provide the obfuscated code according to the obfuscation method described above.
+```
+
+```java
+tag1_1
+public int evaluateExpression(String expr) {
+    Stack<Integer> numStack = new Stack<>();
+    Stack<Character> operationStack = new Stack<>();
+    int position = 0;
+    int expressionLength = expr.length();
+    
+    while (position < expressionLength) {
+        char ch = expr.charAt(position);
+        
+        if (Character.isWhitespace(ch)) {
+            position++;
+            continue;
+        }
+
+        if (Character.isDigit(ch)) {
+            int num = 0;
+            while (position < expressionLength && Character.isDigit(expr.charAt(position))) {
+                num = num * 10 + (expr.charAt(position) - '0');
+                position++;
+            }
+            numStack.push(num);
+        } else if (ch == '(') {
+            operationStack.push(ch);
+            position++;
+        } else if (ch == ')') {
+            while (!operationStack.isEmpty() && !operationStack.peek().equals('(')) {
+                int operand2 = numStack.pop();
+                char operator = operationStack.pop();
+                int operand1 = numStack.pop();
+                numStack.push(applyOp(operator, operand1, operand2));
+            }
+            operationStack.pop(); // Remove '('
+            position++;
+        } else if (ch == '+' || ch == '-' || ch == '*' || ch == '/') {
+            while (!operationStack.isEmpty() && precedence(operationStack.peek()) >= precedence(ch)) {
+                int operand2 = numStack.pop();
+                char operator = operationStack.pop();
+                int operand1 = numStack.pop();
+                numStack.push(applyOp(operator, operand1, operand2));
+            }
+            operationStack.push(ch);
+            position++;
+        } else {
+            throw new IllegalArgumentException("Invalid character: " + ch);
+        }
+    }
+
+    while (!operationStack.isEmpty()) {
+        int operand2 = numStack.pop();
+        char operator = operationStack.pop();
+        int operand1 = numStack.pop();
+        numStack.push(applyOp(operator, operand1, operand2));
+    }
+
+    return numStack.pop();
+}
 
 ```
 

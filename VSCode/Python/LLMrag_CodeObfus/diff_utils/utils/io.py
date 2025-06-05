@@ -96,18 +96,18 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
                      unit="line"):
         json_data = json.loads(line)
         
-        # if json_data["after_obfus"] == "":
-        if json_data["after_watermark"] == "":
+        if json_data["after_obfus"] == "":
+        # if json_data["after_watermark"] == "":
             continue
         
         try:
             format_origin = format_func(json_data["code"], lang)
-            # format_obfus = format_func(json_data["after_obfus"], lang)
-            format_obfus = format_func(json_data["after_watermark"], lang)
+            format_obfus = format_func(json_data["after_obfus"], lang)
+            # format_obfus = format_func(json_data["after_watermark"], lang)
         except RuntimeError as e:
             continue
         
-        diffs = tagDiff(obfus_type.name, wparser, format_origin, format_obfus)
+        ents, diffs = tagDiff(obfus_type.name, wparser, format_origin, format_obfus)
         
         if not diffs:
             continue
@@ -121,9 +121,12 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
             "url": json_data["url"],
             "obfus_level": obfus_type.name,
             "obfus_desc": obfus_type.desc,
+            "constraints": obfus_type.constraints,
+            "typical_changes": obfus_type.typical_changes,
+            "extracted_entities": "\n".join(format_entity(ent) for ent in ents),
             "original_code": json_data["code"],
-            # "obfuscated_code": json_data["after_obfus"],
-            "obfuscated_code": json_data["after_watermark"],
+            "obfuscated_code": json_data["after_obfus"],
+            # "obfuscated_code": json_data["after_watermark"],
             "diff": "\n".join(format_entity(diff) for diff in diffs),
         }
         
@@ -161,22 +164,33 @@ def doc2embedData(obfus_type:ObfusType):
         metadata = doc.metadata
         lines = []
         if metadata.get("obfus_level"):
-            lines.append(f"[obfus_level] {metadata['obfus_level']}")
+            lines.append(f"<obfus_level> {metadata['obfus_level']}")
         if metadata.get("obfus_desc"):
-            lines.append(f"[obfus_desc] {metadata['obfus_desc']}")
-        lines.append(f"[content] {content}\n\n")
+            lines.append(f"<obfus_desc> {metadata['obfus_desc']}")
+        lines.append(f"<content> {content}\n")
         if metadata.get("language"):
-            lines.append(f"[code_language] {metadata['language']}")
+            lines.append(f"<code_language> {metadata['language']}")
         if metadata.get("original_code"):
             format_origin = format_func(metadata['original_code'], metadata["language"])
             attach_lineNum_ori = attach_lineNum_func(format_origin)
-            lines.append(f"[original_code]\n{attach_lineNum_ori}\n")
+            lines.append(f"<original_code>\n{attach_lineNum_ori}\n")
+        if metadata.get("extracted_entities"):
+            lines.append("<Process> First extract renameable entities from the original code:")
+            content = metadata['extracted_entities']
+            indented_entities = "\n".join("\t" + line for line in content.splitlines())
+            lines.append(f"\t[extracted_entities]\n{indented_entities}\n")
+        if metadata.get("diff"):
+            lines.append(f"<operation>:\nThen do *{metadata['obfus_desc']}*")
+            if metadata.get("constraints"):
+                lines.append(f"[constraints] {metadata['constraints']}")
+            if metadata.get("typical_changes"):
+                lines.append(f"[typical_changes] {metadata['typical_changes']}")
+            lines.append(f"[diff]\n{metadata['diff']}\n")
         if metadata.get("obfuscated_code"):
             format_obfus = format_func(metadata['obfuscated_code'], metadata["language"])
             attach_lineNum_obfus = attach_lineNum_func(format_obfus)
-            lines.append(f"[obfuscated_code]\n{attach_lineNum_obfus}\n")
-        if metadata.get("diff"):
-            lines.append(f"<diff>:\n{metadata['diff']}")
+            lines.append(f"<obfuscated_code>\n{attach_lineNum_obfus}\n")
+
         
         full_content = "\n".join(lines)
         

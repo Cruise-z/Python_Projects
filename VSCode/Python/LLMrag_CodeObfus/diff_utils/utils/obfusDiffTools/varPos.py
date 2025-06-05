@@ -5,10 +5,11 @@ from ..codeAnalysis.infProcess import *
 
 # !混淆等级1.2: 随机化变量声明位置
 @register("tag1_2")
-def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> list:
+def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tuple[List, List]:
     key_list = ["entity", "kind", "type", "modifiers", "scope"]
     matched_entities = get_matched_entities(wparser, ori_fcode, obf_fcode, key_list)
     
+    ents = []
     diffs = []
     for items in matched_entities:
         for ori, obf in items:
@@ -24,7 +25,9 @@ def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> lis
                     decPosDiff=(ori.decPos, obf.decPos),
                     initPosDiff=(ori.initPos, obf.initPos),
                     useFPosDiff=(ori.useFPos, obf.useFPos),
+                    strategy=f""
                 )
+                ents.append(ori)
                 diffs.append(diff)
 
-    return diffs
+    return ents, diffs

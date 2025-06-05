@@ -9,13 +9,21 @@ import re
 content_tag1_1 = """
 This obfuscation type targets the names of user-defined symbols within a function or method. It performs randomized renaming of function (method) names, parameter names, and local variable names, while strictly preserving program semantics.
 
+This form of obfuscation aims to disrupt name-based heuristics in static analysis, reverse engineering, or learning-based models, without altering the runtime behavior of the program.
+
+This strategy is effective at eliminating semantic clues carried in identifier names, while maintaining structural and operational correctness of the code.
+"""
+
+constraints_tag1_1 = """
 The transformation is governed by the following constraints:
 - All renamed identifiers must be semantically equivalent to their originals, with no change to logic, behavior, or type correctness.
 - Function names may be renamed as long as **all corresponding call sites are updated consistently**.
 - Parameter names can be replaced with arbitrary but valid alternatives, provided **all references within the function body are correctly updated**.
 - Local variable names may be renamed, individually or in batches, with **consistent substitutions across all reads and writes** within their scope.
 - Renamed identifiers must **not** collide with existing global names, imported symbols, or scoped declarations.
+"""
 
+typical_changes_tag1_1 = """
 Identifier names can be generated in different styles to increase variability or mimic realistic coding practices. These include:
 - Completely random but syntactically valid identifiers (e.g., `a9fG_23`), ensuring they comply with language-specific naming rules (e.g., not starting with a digit).
 - Patterned or style-based naming conventions such as:
@@ -25,16 +33,13 @@ Identifier names can be generated in different styles to increase variability or
   - `_underscore_init` (e.g., `_tempVar`)
 These styles may be applied uniformly or mixed randomly to confuse naming-based heuristics or stylistic pattern recognition.
 
-This form of obfuscation aims to disrupt name-based heuristics in static analysis, reverse engineering, or learning-based models, without altering the runtime behavior of the program.
-
 Typical changes include:
 - Renaming function names (e.g., `calculateSum` → `f_XY21`) while updating all invocation points.
 - Changing parameter names to opaque identifiers (e.g., `count` → `a7_b`) without modifying any logic.
 - Replacing descriptive local variable names with randomized or stylized alternatives, preserving all references.
 - Ensuring **consistent, scope-aware symbol resolution** to avoid shadowing or leakage issues.
-
-This strategy is effective at eliminating semantic clues carried in identifier names, while maintaining structural and operational correctness of the code.
 """
+
 content_tag1_2 = """
 This obfuscation type targets named local variable declarations within a function. It performs randomized reordering of their declaration and initialization positions, while strictly preserving semantic correctness and program behavior.
 
@@ -59,13 +64,17 @@ class ObfusType(Enum):
     tag1_1 = {
         "id": "1-1",
         "desc": "Function nameable entity randomization renaming.",
-        "content": content_tag1_1
+        "content": content_tag1_1,
+        "constraints": constraints_tag1_1,
+        "typical_changes": typical_changes_tag1_1
     }
     
     tag1_2 = {
         "id": "1-2",
         "desc": "Randomized repositioning of variable declarations and initializations within their lexical scope, ensuring that declarations precede initializations, and both precede the first usage in the control flow.", 
-        "content": content_tag1_2
+        "content": content_tag1_2,
+        "constraints": constraints_tag1_1,
+        "typical_changes": typical_changes_tag1_1
     }
     
     @property
@@ -75,6 +84,14 @@ class ObfusType(Enum):
     @property
     def content(self):
         return self.value["content"]
+    
+    @property
+    def constraints(self):
+        return self.value["constraints"]
+    
+    @property
+    def typical_changes(self):
+        return self.value["typical_changes"]
 
 @dataclass
 class renameableEntity:
@@ -102,6 +119,7 @@ class diffTag1_1:
     type: Optional[str]       # 数据类型，如 void / int / String 等
     modifiers: List[str]      # 修饰符，如 ["public", "static"]
     scope: List[str]          # 原始作用域路径，如 method_declaration / parameter / local
+    strategy: str             # 重命名策略，默认为 "rename"
 
 @dataclass
 class diffTag1_2:
@@ -119,6 +137,7 @@ class diffTag1_2:
     initPosDiff: Tuple[Optional[Tuple[str, int]], Optional[Tuple[str, int]]] 
     # 原始及混淆首次使用位置，([声明语句, 行号], [声明语句, 行号])
     useFPosDiff: Tuple[Optional[Tuple[str, int]], Optional[Tuple[str, int]]] 
+    strategy: str             # 位置随机化策略，默认为 "rename"
 
 
 def format_func(codefunc:str, lang:str) -> str:
@@ -212,6 +231,9 @@ def field_formatter(entity: Any, field) -> str:
             if value else
             "  - first used at: [not found]"
         )
+    #!对所有diffTag中共同出现的实体
+    elif name == "strategy":
+        return f"  - strategy: \n{textwrap.indent(value, '    ')}"
     #!对diffTag1_2实体
     elif name == "decPosDiff":
         if value[0] and value[1]:
