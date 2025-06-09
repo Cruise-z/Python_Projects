@@ -708,7 +708,7 @@ public int evaluateExpression_$(String _input) {
 
 新增：改动过程  [renaming_map]改动锚点
 
-修改后效果还不错
+修改后效果还不错：
 
 ```prompt
 [obfus_level] tag1_1
@@ -752,68 +752,187 @@ Typical changes include:
 Please provide the obfuscated code according to the obfuscation method described above.
 ```
 
+````java
+<think>
+Okay, so I need to help obfuscate this Java function called evaluateExpression. The goal is to rename all user-defined symbols in a way that preserves their meaning but makes them harder to understand or reverse-engineer. Let me think about how to approach this.
+
+First, looking at the original code: it's parsing an arithmetic expression and evaluating it using stacks for numbers and operators. The function uses 'nums' for numbers and 'ops' for operators. It also has applyOp method which applies operations with correct precedence.
+
+The obfuscation rules say I can rename function names as long as all call sites are consistent, but in this case, the main function is evaluateExpression, so maybe that's okay. Wait, no—the user provided the code and wants it obfuscated according to their method. Hmm.
+
+Wait, actually, the obfuscation applies to identifiers within functions—so variable names inside the function can be renamed as long as they are consistent in use. So I need to rename 'nums' and 'ops', maybe replace them with different variables or apply some renaming strategy.
+
+Also, parameter names: but this function doesn't take parameters; it takes a String expr. So no change there. Local variable names within the method—like i, ch, num, etc.—can be renamed as long as they are consistent in scope and usage.
+
+So I can go through each line and replace 'nums' with something else like 'numbers', 'stackNumbers', or maybe even a different style based on the rules provided. Similarly, 'ops' could become 'operatorStack' or 'opStack'.
+
+Looking at variable names:
+
+- nums is a stack for numbers.
+- ops is a stack for operators.
+
+Let me think about how to rename these without causing conflicts with existing variables.
+
+Also, I should ensure that all references are updated. For example, in the while loop where i < n, I'll need to keep the same logic but change variable names.
+
+Another point: the method uses applyOp which applies operations considering precedence. This part is fine as it's a helper function; no renaming needed there.
+
+So step by step:
+
+1. Rename 'nums' to something like 'numbers', ensuring it doesn't conflict with any global or imported variables.
+2. Rename 'ops' to 'operators'.
+3. Change variable names in loops and conditionals accordingly, but keeping the logic intact.
+
+Let me try rewriting the code with these changes.
+
+Original line: int num = 0; while (i < n && Character.isDigit(expr.charAt(i))) { ... }
+
+After renaming variables:
+
+int currentNumber = 0;
+while (i < n && Character.isDigit(expr.charAt(i))) {
+    currentNumber = currentNumber * 10 + (expr.charAt(i) - '0');
+    i++;
+}
+
+Then, when pushing to nums, change it to numbers.
+
+Similarly for the operator stack.
+
+Testing if this approach would work without breaking functionality. The variable names are changed but their roles remain the same.
+
+I should also check any method calls or helper functions that might depend on these variables, but in this case, applyOp is called with the correct parameters from nums and ops, so as long as we replace them correctly, it's fine.
+
+Now, let me write the code step by step, replacing variable names according to the obfuscation rules.
+</think>
+
+The Java code has been obfuscated by renaming variables while maintaining their original functionality. The variable `nums` was renamed to `numbers`, and `ops` was renamed to `operators`. This preserves the program's semantics without altering its behavior.
+
 ```java
-tag1_1
 public int evaluateExpression(String expr) {
-    Stack<Integer> numStack = new Stack<>();
-    Stack<Character> operationStack = new Stack<>();
-    int position = 0;
-    int expressionLength = expr.length();
-    
-    while (position < expressionLength) {
-        char ch = expr.charAt(position);
-        
+    Stack<Integer> numbers = new Stack<>();
+    Stack<Character> operators = new Stack<>();
+    int n = expr.length();
+    int i = 0;
+
+    while (i < n) {
+        char ch = expr.charAt(i);
+
         if (Character.isWhitespace(ch)) {
-            position++;
+            i++;
             continue;
         }
 
         if (Character.isDigit(ch)) {
-            int num = 0;
-            while (position < expressionLength && Character.isDigit(expr.charAt(position))) {
-                num = num * 10 + (expr.charAt(position) - '0');
-                position++;
+            int currentNumber = 0;
+            while (i < n && Character.isDigit(expr.charAt(i))) {
+                currentNumber = currentNumber * 10 + (expr.charAt(i) - '0');
+                i++;
             }
-            numStack.push(num);
+            numbers.push(currentNumber);
         } else if (ch == '(') {
-            operationStack.push(ch);
-            position++;
+            operators.push(ch);
+            i++;
         } else if (ch == ')') {
-            while (!operationStack.isEmpty() && !operationStack.peek().equals('(')) {
-                int operand2 = numStack.pop();
-                char operator = operationStack.pop();
-                int operand1 = numStack.pop();
-                numStack.push(applyOp(operator, operand1, operand2));
+            while (!operators.isEmpty() && !operators.peek().equals('(')) {
+                int a = numbers.pop();
+                int b = numbers.pop();
+                char op = operators.pop();
+                numbers.push(applyOp(op, b, a));
             }
-            operationStack.pop(); // Remove '('
-            position++;
+            operators.pop(); // Remove '('
+            i++;
         } else if (ch == '+' || ch == '-' || ch == '*' || ch == '/') {
-            while (!operationStack.isEmpty() && precedence(operationStack.peek()) >= precedence(ch)) {
-                int operand2 = numStack.pop();
-                char operator = operationStack.pop();
-                int operand1 = numStack.pop();
-                numStack.push(applyOp(operator, operand1, operand2));
+            while (!operators.isEmpty() && precedence(operators.peek()) >= precedence(ch)) {
+                int a = numbers.pop();
+                int b = numbers.pop();
+                char op = operators.pop();
+                numbers.push(applyOp(op, b, a));
             }
-            operationStack.push(ch);
-            position++;
+            operators.push(ch);
+            i++;
         } else {
             throw new IllegalArgumentException("Invalid character: " + ch);
         }
     }
 
-    while (!operationStack.isEmpty()) {
-        int operand2 = numStack.pop();
-        char operator = operationStack.pop();
-        int operand1 = numStack.pop();
-        numStack.push(applyOp(operator, operand1, operand2));
+    while (!operators.isEmpty()) {
+        int a = numbers.pop();
+        int b = numbers.pop();
+        char op = operators.pop();
+        numbers.push(applyOp(op, b, a));
     }
 
-    return numStack.pop();
+    return numbers.pop();
 }
-
 ```
 
+````
 
+~~~java
+<think>
+Alright, so I need to help obfuscate this Java method called calculateDiscountedPrice. The goal is to rename function names and other identifiers in a way that preserves functionality but makes it harder for someone analyzing the code to understand what's going on.
+
+First, looking at the original code: the function is named calculateDiscountedPrice. That should be changed because it's descriptive. Maybe something shorter like calcDiscPrice().
+
+Next, the parameter names are originalPrice and customerLevel. Those can stay as placeholders since they're just variables being used to compute a discount rate.
+
+The discountRate variable is calculated based on customerLevel. The current code uses if-else statements which could be obfuscated by converting them into switch-case for better readability but more importantly, to make the control flow less obvious. So I'll replace that with a switch statement.
+
+So instead of:
+if (customerLevel == 1) { ... } else if (...) etc.
+I'll use:
+switch (customerLevel) {
+    case 1: discountRate = 0.1; break;
+    case 2: discountRate = 0.15; break;
+    default: discountRate = 0.05; break;
+}
+
+Then, the variables like discountAmount and finalPrice can be renamed to something less descriptive. Maybe amtDiscounted and finPrice.
+
+Putting it all together, I'll replace each identifier with a randomized but semantically similar name while keeping the logic intact. Also, I'll ensure that the switch statement is used instead of multiple if-else conditions for better obfuscation.
+</think>
+
+Here is the obfuscated version of the provided Java code according to the described obfuscation method:
+
+```java
+public static double calcDiscPrice(double originalP, int clev) {
+    double dr = 0.0;
+
+    switch (clev) {
+        case 1:
+            dr = 0.1;
+            break;
+        case 2:
+            dr = 0.15;
+            break;
+        default:
+            dr = 0.05;
+            break;
+    }
+
+    double amtDisc = originalP * dr;
+    double finP = originalP - amtDisc;
+
+    return finP;
+}
+```
+
+Changes made:
+- Renamed `calculateDiscountedPrice` to `calcDiscPrice`
+- Renamed `originalPrice` to `originalP`
+- Renamed `customerLevel` to `clev`
+- Renamed `discountRate` to `dr`
+- Renamed `discountAmount` to `amtDisc`
+- Renamed `finalPrice` to `finP`
+- Converted the if-else chain to a switch statement for better obfuscation
+- Kept all logic and functionality intact while making it harder to reverse-engineer
+~~~
+
+**相较于规则混淆**，大模型借助`rag`可以丰富混淆的语义操作，使得混淆结果不再囿于规程和格式，更加灵活
+比如上面这段混淆过程，大模型自动修改if-else为switch_case，使得代码效率得到一定增强
+
+把基于`rag`的混淆思路写的清晰流畅后，不仅减少模型思维链思考时长，还可能会有额外的"惊喜"
 
 # DeCoMa
 

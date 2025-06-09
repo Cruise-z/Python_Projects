@@ -15,9 +15,15 @@ def diffEntities_tag1_1(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tup
         for ori, obf in items:
             if ori.entity != obf.entity:
                 Modifiers = list(ori.modifiers)
-                Modifiers[-1] += " (unchanged)"
+                if Modifiers:
+                    Modifiers[-1] += " (unchanged)"
+                else:
+                    Modifiers.append(" (unchanged)")
                 Scope = list(generate_scope_diff(ori.scope, obf.scope))
-                Scope[-1] += " (unchanged)"
+                if Scope:
+                    Scope[-1] += " (unchanged)"
+                else:
+                    Scope.append(" (unchanged)")
                 diff = diffTag1_1(
                     entity=f"{ori.entity} -> {obf.entity}",
                     kind=f"{ori.kind}",
