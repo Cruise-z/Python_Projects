@@ -140,11 +140,11 @@ class diffTag1_2:
     strategy: str             # 位置随机化策略，默认为 "rename"
 
 
-def format_func(codefunc:str, lang:str) -> str:
+def format_func(class_name:str, codefunc:str, lang:str) -> str:
     """
     使用 google-java-format 对 Java 源码进行格式化。
     """
-    Wrapped_func = f"public class Example {{\n{codefunc}\n}}"
+    Wrapped_func = f"public class {class_name} {{\n{codefunc}\n}}"
     if lang == 'java':
         jar_path = "build/CodeFormat_adapter/google-java-format-1.27.0-all-deps.jar"
         process = subprocess.Popen(

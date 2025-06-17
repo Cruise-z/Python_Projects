@@ -80,6 +80,27 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
 
         return f"{node_type}@line:{line}"
     
+    def is_identifier_method_or_field_use(node):
+        """
+        判断 identifier 是否是方法名调用或字段访问的一部分，避免误认为变量使用
+        """
+        if not node or node.type != "identifier":
+            return False
+        parent = node.parent
+        if not parent:
+            return False
+
+        # 情况 1: 方法调用时作为函数名
+        if parent.type == "method_invocation" and node == parent.child_by_field_name("name"):
+            return True
+
+        # 情况 2: 作为字段调用一部分（如 obj.offer）
+        if parent.type in {"field_access", "field_expression"}:
+            return True
+
+        return False
+
+    
     def find_InitUse_Fpos_in_node(entity, name, root_node):
         """
         在指定语法块node中查找变量首次初始化位置和首次真正使用(非左值），同时避免作用域穿越。
@@ -120,16 +141,32 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                     if operator in ("++", "--"):
                         return False
 
-            # ✅ 真正的 identifier 使用（排除声明本身）
+            # 🎯 函数调用检测（确保只记录真正的自调用）
+            # ✅ Java-specific method invocation: method_invocation node
+            if node.type == "method_invocation":
+                name_node = node.child_by_field_name("name")  # e.g. identifier 'offer'
+                object_node = node.child_by_field_name("object")  # e.g. 'this' or another object
+                if name_node and get_node_text(name_node) == name:
+                    # 自调用必须没有 object（隐式 this）或明确 this
+                    if object_node is None or get_node_text(object_node) == "this":
+                        if not (entity.start <= name_node.start_byte <= entity.end):
+                            if entity.useFPos is None:
+                                line = name_node.start_point[0] + 1
+                                text = source_lines[line - 1].strip() if line - 1 < len(source_lines) else ""
+                                entity.useFPos = (text, line)
+                                return True
+
+            # 🎯 非调用形式下的 identifier 使用（变量/参数等）
+            # ✅ 真正的 identifier 使用（排除声明本身 + 非方法名/字段调用）
             if node.type == "identifier" and get_node_text(node) == name:
-                # 跳过声明语句本身
                 if not (entity.start <= node.start_byte <= entity.end):
-                    #!更改实体字段名后在这里也需要更改
-                    if entity.useFPos is None:
-                        line = node.start_point[0] + 1
-                        text = source_lines[line - 1].strip() if line - 1 < len(source_lines) else ""
-                        entity.useFPos = (text, line)
-                        return True  # 找到首次使用，提前返回
+                    # 排除方法/字段用法
+                    if not is_identifier_method_or_field_use(node): 
+                        if entity.useFPos is None:
+                            line = node.start_point[0] + 1
+                            text = source_lines[line - 1].strip() if line - 1 < len(source_lines) else ""
+                            entity.useFPos = (text, line)
+                            return True
 
             # 深度优先递归访问子节点
             for child in node.children:
@@ -169,11 +206,15 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                 start=fn_name_node.start_byte,
                 end=fn_name_node.end_byte,
                 decPos=(code, line),
-                initPos=None,
+                initPos=(code, line),
                 useFPos=None
             )
             
             func_name.append(entity)
+            # 记录函数第一次自调用位置
+            body_node = node.child_by_field_name("body")
+            if body_node:
+                find_InitUse_Fpos_in_node(entity, entity.entity, body_node)
 
             # 函数参数
             parameters = node.child_by_field_name("parameters")
