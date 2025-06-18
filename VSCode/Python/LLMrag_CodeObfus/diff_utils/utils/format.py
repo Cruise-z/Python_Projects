@@ -43,22 +43,26 @@ Typical changes include:
 content_tag1_2 = """
 This obfuscation type targets named local variable declarations within a function. It performs randomized reordering of their declaration and initialization positions, while strictly preserving semantic correctness and program behavior.
 
+This form of obfuscation aims to confuse tools or models that rely on the typical proximity between declaration, initialization, and usage, without changing the runtime behavior of the program.
+
+This strategy is subtle but effective at confusing static analyzers and semantic models that expect tight locality between variable lifecycle events.
+"""
+
+constraints_tag1_2 = """
 The transformation is governed by the following constraints:
+- This transformation applies to the **declaration and initialization positions** of each variable.
 - Both **declaration** and **initialization** must remain strictly **within the lexical scope** in which the variable was originally declared (e.g., inside a `try`, `if`, or `loop` block).
 - The **declaration must appear before the initialization**, and the **initialization must appear before the variable’s first usage** in the control flow.
 - If a variable is declared and initialized together (e.g., `int i = 0;`), they may be **split** into separate statements (e.g., `int i; i = 0;`).
-- Variable names, types, and modifiers **must remain unchanged**.
+- Variable names, types, modifiers, the initialization value, and the first use position **must all remain unchanged**.
+"""
 
-This form of obfuscation aims to confuse tools or models that rely on the typical proximity between declaration, initialization, and usage, without changing the runtime behavior of the program.
-
+typical_changes_tag1_2 = """
 Typical changes include:
 - Splitting `declaration + initialization` into separate lines (e.g., transforming `int i = 0;` into `int i; i = 0;`).
-- Relocating local variable declarations to earlier positions within their valid lexical scope, as long as they occur before the variable's first usage in the control flow.
-- Moving variable `declarations` and/or `initializations` either to the beginning of the function or closer to their first usage, based on the randomization strategy, while ensuring that **declarations precede initializations**, and both occur **before the first usage within their valid lexical scope**.
 - Splitting or merging declarations of multiple variables of the same type (e.g., `int i, j;` vs. `int i; int j;`), provided their scope and usage order remain valid.
-- Ensuring that all variable references, types, and modifiers remain unchanged, so the semantic behavior of the program is fully preserved.
-
-This strategy is subtle but effective at confusing static analyzers and semantic models that expect tight locality between variable lifecycle events.
+- Relocating local variable `declarations` and/or `initializations` randomly between **the beginning of its lexical scope** and **its first usage position**, while ensuring that **declarations precede initializations**, and both occur **before the first usage**.
+- Ensuring that each variable's name, type, modifiers, the initialization value, and the first use position remain unchanged, so the semantic behavior of the program is fully preserved.
 """
 class ObfusType(Enum):
     tag1_1 = {
@@ -66,15 +70,15 @@ class ObfusType(Enum):
         "desc": "Function nameable entity randomization renaming.",
         "content": content_tag1_1,
         "constraints": constraints_tag1_1,
-        "typical_changes": typical_changes_tag1_1
+        "typical_changes": typical_changes_tag1_1,
     }
     
     tag1_2 = {
         "id": "1-2",
         "desc": "Randomized repositioning of variable declarations and initializations within their lexical scope, ensuring that declarations precede initializations, and both precede the first usage in the control flow.", 
         "content": content_tag1_2,
-        "constraints": constraints_tag1_1,
-        "typical_changes": typical_changes_tag1_1
+        "constraints": constraints_tag1_2,
+        "typical_changes": typical_changes_tag1_2,
     }
     
     @property

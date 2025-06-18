@@ -117,10 +117,13 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                 if left and left.type == "identifier" and get_node_text(left) == name:
                     # 👉 情况1: 普通赋值 (=) → 初始化
                     #!更改实体字段名后在这里也需要更改
-                    if operator_str == "=" and right and entity.initPos is None:
-                        line = right.start_point[0] + 1
-                        text = source_lines[line - 1].strip() if line - 1 < len(source_lines) else ""
-                        entity.initPos = (text, line)
+                    if operator_str == "=" and right:
+                        if entity.initPos is None:
+                            line = right.start_point[0] + 1
+                            text = source_lines[line - 1].strip() if line - 1 < len(source_lines) else ""
+                            entity.initPos = (text, line)
+                        else:
+                            pass  # 已经有初始化位置了，不需要重复记录
 
                     # 👉 情况2: 复合赋值 (+=, -=...) → 使用但不是初始化
                     elif operator_str in {"*=", "+=", "-=", "/=", "%=", "&=", "|=", "^=", ">>=", "<<=", ">>>="}:
@@ -259,13 +262,19 @@ def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
                         line = name_node.start_point[0] + 1
                         code = source_lines[line - 1].strip()
                         
-                        # 提取初始化位置：如果有初始化值，就用整个声明句的起始位置
-                        init_node = child.child_by_field_name("value")
+                        # 提取初始化位置：用位置匹配法提取初始化节点，被赋值节点不一定是value节点
+                        init_node = None
+                        for i, c in enumerate(child.children):
+                            if get_node_text(c) == "=" and i + 1 < len(child.children):
+                                init_node = child.children[i + 1]
+                                break
+                        
                         init_pos = None
                         if init_node:
-                            decl_line = child.start_point[0] + 1
-                            decl_code = source_lines[decl_line - 1].strip()
-                            init_pos = (decl_code, decl_line)
+                            init_line = init_node.start_point[0] + 1
+                            if 0 <= init_line - 1 < len(source_lines):
+                                init_code = source_lines[init_line - 1].strip()
+                                init_pos = (init_code, init_line)
                         
                         entity = renameableEntity(
                             entity=get_node_text(name_node),
