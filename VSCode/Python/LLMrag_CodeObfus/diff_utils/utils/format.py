@@ -2,6 +2,7 @@ from tree_sitter import Language, Parser
 from enum import Enum
 from dataclasses import dataclass, fields, is_dataclass
 from typing import List, Optional, Tuple, Any
+from difflib import SequenceMatcher
 import subprocess
 import textwrap
 import re
@@ -40,12 +41,23 @@ Typical changes include:
 - Ensuring **consistent, scope-aware symbol resolution** to avoid shadowing or leakage issues.
 """
 
+algorithm_tag1_1 = """
+"""
+
 content_tag1_2 = """
-This obfuscation type targets named local variable declarations within a function. It performs randomized reordering of their declaration and initialization positions, while strictly preserving semantic correctness and program behavior.
+This obfuscation type targets **named local variable declarations** within a function or block scope. For each variable:
+- If a declaration and initialization appear in a single statement (e.g., `int x = 5;`), the transformation will split this into two separate statements (`int x;` and `x = 5;`).
+- Both declaration and initialization will then be randomly relocated, as long as:
+  1. The declaration appears **before** the initialization.
+  2. Both appear **before** the first usage of the variable.
+  3. All movements remain within the original lexical scope.
 
-This form of obfuscation aims to confuse tools or models that rely on the typical proximity between declaration, initialization, and usage, without changing the runtime behavior of the program.
+The transformation must preserve:
+- Variable names, types, modifiers (e.g., annotations).
+- The control-flow behavior and semantic correctness of the program.
+- The original position of the **first usage**.
 
-This strategy is subtle but effective at confusing static analyzers and semantic models that expect tight locality between variable lifecycle events.
+This form of obfuscation is designed to confuse static analyzers and models by breaking common assumptions about variable lifecycle locality.
 """
 
 constraints_tag1_2 = """
@@ -54,7 +66,11 @@ The transformation is governed by the following constraints:
 - Both **declaration** and **initialization** must remain strictly **within the lexical scope** in which the variable was originally declared (e.g., inside a `try`, `if`, or `loop` block).
 - The **declaration must appear before the initialization**, and the **initialization must appear before the variable’s first usage** in the control flow.
 - If a variable is declared and initialized together (e.g., `int i = 0;`), they may be **split** into separate statements (e.g., `int i; i = 0;`).
-- Variable names, types, modifiers, the initialization value, and the first use position **must all remain unchanged**.
+- Variable names, types, modifiers, the initialization value, and the first use position **must all remain unchanged**：
+    - Variable **declaration and initialization** may be split, but must **remain in order**: declaration → initialization → first use.
+    - Variable **usage lines** must remain unchanged in line number and structure.
+    - No renaming, inlining, merging, hoisting, or deletion is allowed.
+    - All transformations must be performed **within the variable’s declared lexical scope** only (e.g., loop body, method block).
 """
 
 typical_changes_tag1_2 = """
@@ -64,6 +80,19 @@ Typical changes include:
 - Relocating local variable `declarations` and/or `initializations` randomly between **the beginning of its lexical scope** and **its first usage position**, while ensuring that **declarations precede initializations**, and both occur **before the first usage**.
 - Ensuring that each variable's name, type, modifiers, the initialization value, and the first use position remain unchanged, so the semantic behavior of the program is fully preserved.
 """
+
+algorithm_tag1_2 = """
+For each local variable:
+1. Detect the line where it is declared and initialized (may be the same line).
+2. Identify the earliest line where the variable is first used.
+3. Split declaration and initialization into two statements, if not already split.
+4. Randomly position the declaration and initialization within the allowable range:
+   - Declaration can go anywhere from the start of the lexical scope to just before initialization.
+   - Initialization can go anywhere after the declaration but before the first use.
+5. Ensure first use line is untouched and still receives the correct value.
+**FALLBACK: If a variable cannot be legally moved (e.g., used in a lambda, or control-flow-sensitive position), skip its transformation and leave it unchanged.
+"""
+
 class ObfusType(Enum):
     tag1_1 = {
         "id": "1-1",
@@ -71,14 +100,16 @@ class ObfusType(Enum):
         "content": content_tag1_1,
         "constraints": constraints_tag1_1,
         "typical_changes": typical_changes_tag1_1,
+        "algorithm": algorithm_tag1_1,
     }
     
     tag1_2 = {
         "id": "1-2",
-        "desc": "Randomized repositioning of variable declarations and initializations within their lexical scope, ensuring that declarations precede initializations, and both precede the first usage in the control flow.", 
+        "desc": "Randomized repositioning of variable declarations and initializations strictly within their lexical scope. For each variable, the declaration must appear before its initialization, and both must precede the variable's first use in the control flow. This process preserves semantic correctness while disrupting variable lifecycle locality.", 
         "content": content_tag1_2,
         "constraints": constraints_tag1_2,
         "typical_changes": typical_changes_tag1_2,
+        "algorithm": algorithm_tag1_2,
     }
     
     @property
@@ -96,6 +127,10 @@ class ObfusType(Enum):
     @property
     def typical_changes(self):
         return self.value["typical_changes"]
+    
+    @property
+    def algorithm(self):
+        return self.value["algorithm"]
 
 @dataclass
 class renameableEntity:
@@ -140,7 +175,7 @@ class diffTag1_2:
     # 原始及混淆首次初始化位置，([初始化语句, 行号], [初始化语句, 行号])
     initPosDiff: Tuple[Optional[Tuple[str, int]], Optional[Tuple[str, int]]] 
     # 原始及混淆首次使用位置，([声明语句, 行号], [声明语句, 行号])
-    useFPosDiff: Tuple[Optional[Tuple[str, int]], Optional[Tuple[str, int]]] 
+    useFPos: Optional[Tuple[str, int]]
     strategy: str             # 位置随机化策略，默认为 "rename"
 
 
@@ -166,6 +201,139 @@ def format_func(class_name:str, codefunc:str, lang:str) -> str:
     # match = re.search(r"public class Example \{\n(.*)\n\}", stdout, re.DOTALL)
     # format_func = textwrap.dedent(match.group(1))
     return format_func
+
+# 1. Normalize lines (with literal abstraction)
+def normalize_code_line_literal_aware(line: str) -> str:
+    """
+    Normalize code line for syntax-tolerant comparison:
+    - Strip leading/trailing spaces
+    - Reduce multiple spaces to one
+    - Remove trailing semicolons and inline comments (basic)
+    """
+    line = line.strip()
+    line = re.sub(r'"[^"]*"', '"STR"', line)  # Normalize string literals
+    line = re.sub(r'\s+', ' ', line)
+    line = re.sub(r';\s*$', '', line)
+    line = re.sub(r'//.*$', '', line)
+    return line.strip()
+
+# 2. Reverse token similarity with normalization
+def reversed_token_similarity(line1: str, line2: str) -> float:
+    tokens1 = normalize_code_line_literal_aware(line1).split()
+    tokens2 = normalize_code_line_literal_aware(line2).split()
+    tokens1.reverse()
+    tokens2.reverse()
+    match_count = 0
+    for t1, t2 in zip(tokens1, tokens2):
+        if t1 == t2:
+            match_count += 1
+        else:
+            break
+    return match_count / max(len(tokens1), len(tokens2), 1)
+
+# 3. Stable alignment of line blocks
+def stable_pair_blocks(A: List[str], B: List[str], threshold=0.3) -> Tuple[List[str], List[str]]:
+    alignedA, alignedB = [], []
+    i, j = 0, 0
+    while i < len(A) or j < len(B):
+        if i < len(A) and j < len(B):
+            sim = reversed_token_similarity(A[i], B[j])
+            if sim >= threshold:
+                alignedA.append(A[i])
+                alignedB.append(B[j])
+                i += 1
+                j += 1
+            else:
+                score_i = reversed_token_similarity(A[i], B[j+1]) if j+1 < len(B) else 0
+                score_j = reversed_token_similarity(A[i+1], B[j]) if i+1 < len(A) else 0
+                if score_i >= score_j:
+                    alignedA.append('')
+                    alignedB.append(B[j])
+                    j += 1
+                else:
+                    alignedA.append(A[i])
+                    alignedB.append('')
+                    i += 1
+        elif i < len(A):
+            alignedA.append(A[i])
+            alignedB.append('')
+            i += 1
+        else:
+            alignedA.append('')
+            alignedB.append(B[j])
+            j += 1
+    return alignedA, alignedB
+
+# 4. Main alignment by LCS + token semantics
+def align_by_lcs_blocks_with_stable_pairs(a: List[str], b: List[str]) -> Tuple[List[str], List[str]]:
+    matcher = SequenceMatcher(None, [normalize_code_line_literal_aware(x) for x in a],
+                                     [normalize_code_line_literal_aware(x) for x in b])
+    aligned_a, aligned_b = [], []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == 'equal':
+            aligned_a.extend(a[i1:i2])
+            aligned_b.extend(b[j1:j2])
+        elif tag == 'replace':
+            block_a = a[i1:i2]
+            block_b = b[j1:j2]
+            smart_a, smart_b = stable_pair_blocks(block_a, block_b)
+            aligned_a.extend(smart_a)
+            aligned_b.extend(smart_b)
+        elif tag == 'delete':
+            aligned_a.extend(a[i1:i2])
+            aligned_b.extend([''] * (i2 - i1))
+        elif tag == 'insert':
+            aligned_a.extend([''] * (j2 - j1))
+            aligned_b.extend(b[j1:j2])
+    return aligned_a, aligned_b
+
+# 5. Align wrapper with blank-line filtering
+def align_CodeBlocks(code1: str, code2: str) -> Tuple[str, str]:
+    # align_code_blocks_strict_semantics
+    _STRING_PLACEHOLDER = "__<STR:%d>__"
+    def _freeze_string_literals(src: str) -> Tuple[str, List[str]]:
+        """Replace string literals with placeholders, return new src & list of literals."""
+        literals = []
+        def _store(match):
+            idx = len(literals)
+            literals.append(match.group(0))
+            return _STRING_PLACEHOLDER % idx
+        frozen = re.sub(r'"(?:\\.|[^"\\])*"', _store, src)
+        return frozen, literals
+
+    def _thaw_string_literals(src: str, literals: List[str]) -> str:
+        """Put literals back into the placeholder positions."""
+        def _restore(match):
+            idx = int(match.group(1))
+            return literals[idx]
+        return re.sub(r'__<STR:(\d+)>__', _restore, src)
+
+    def preprocess_code_lines(code: str) -> List[str]:
+        """
+        Remove:
+        • all // line comments
+        • all /* ... */ or /** ... */ block comments (multiline)
+        • empty / whitespace-only lines
+        Preserve:
+        • string literals (no false deletions)
+        """
+        # 1) Freeze string literals to avoid false comment matches
+        frozen_code, saved_literals = _freeze_string_literals(code)
+        # 2) Remove block comments (non-greedy, DOTALL for multiline)
+        no_blocks = re.sub(r'/\*.*?\*/', '', frozen_code, flags=re.DOTALL)
+        # 3) Remove single-line comments
+        no_line_comments = re.sub(r'//.*$', '', no_blocks, flags=re.MULTILINE)
+        # 4) Thaw string literals back
+        thawed = _thaw_string_literals(no_line_comments, saved_literals)
+        # 5) Split into lines, preserve indentation, drop empty
+        cleaned = [ln for ln in thawed.splitlines() if ln.strip()]
+        return cleaned
+
+    clean_lines1 = preprocess_code_lines(code1)
+    clean_lines2 = preprocess_code_lines(code2)
+
+    aligned_clean1, aligned_clean2 = align_by_lcs_blocks_with_stable_pairs(clean_lines1, clean_lines2)
+    return "\n".join(aligned_clean1), "\n".join(aligned_clean2)
 
 def attach_lineNum_func(formatcode: str) -> str:
     lines = formatcode.splitlines()
@@ -249,11 +417,6 @@ def field_formatter(entity: Any, field) -> str:
             return f"  - first init at line: {value[0][1]}: {value[0][0]}\n    →obfuscated to line {value[1][1]}: {value[1][0]}"
         else:
             return "  - first init at: [unknown]"
-    elif name == "useFPosDiff":
-        if value[0] and value[1]:
-            return f"  - first used at line: {value[0][1]}: {value[0][0]}\n    →obfuscated to line {value[1][1]}: {value[1][0]}"
-        else:
-            return "  - first used at: [unknown]"
     else:
         return f"  - {name}: {value}"
 

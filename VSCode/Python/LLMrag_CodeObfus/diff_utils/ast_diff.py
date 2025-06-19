@@ -33,7 +33,7 @@ if __name__ == '__main__':
     #     int h = g + 1;
     # }"""
     
-    # code2 = "public boolean blockingAwait ( long timeout , TimeUnit unit ) { if ( getCount ( ) != 0 ) { try { BlockingHelper.verifyNonBlocking ( ) ; if ( ! await ( timeout , unit ) ) { dispose ( ) ; return false ; } } catch ( InterruptedException ex ) { dispose ( ) ; throw ExceptionHelper.wrapOrThrow ( ex ) ; } } Throwable ex ; ex = error ; if ( ex != null ) { throw ExceptionHelper.wrapOrThrow ( ex ) ; } return true ; }"
+    # # code2 = "public boolean blockingAwait ( long timeout , TimeUnit unit ) { if ( getCount ( ) != 0 ) { try { BlockingHelper.verifyNonBlocking ( ) ; if ( ! await ( timeout , unit ) ) { dispose ( ) ; return false ; } } catch ( InterruptedException ex ) { dispose ( ) ; throw ExceptionHelper.wrapOrThrow ( ex ) ; } } Throwable ex ; ex = error ; if ( ex != null ) { throw ExceptionHelper.wrapOrThrow ( ex ) ; } return true ; }"
     
     # LANGUAGE = 'java'
     # wparser = WParser(LANGUAGE)
@@ -45,12 +45,12 @@ if __name__ == '__main__':
     # # print(attach_lineNum_func(format_code1))
     # # print(attach_lineNum_func(format_code2))
     
-    # printAST(code1, 'java')
+    # # printAST(code1, 'java')
     
     # # 假设你的输出结果是 ret
-    # # funcs, params, locals_, catches, foreach_vars, lambda_params = extract_renameable_entities(format_code2, wparser)
+    # funcs, params, locals_, catches, foreach_vars, lambda_params = extract_renameable_entities(format_code2, wparser)
 
-    # # print_renameable_entities([funcs, params, locals_, catches, foreach_vars, lambda_params])
+    # print_renameable_entities([funcs, params, locals_, catches, foreach_vars, lambda_params])
 
     
     

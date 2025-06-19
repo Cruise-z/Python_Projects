@@ -934,6 +934,63 @@ Changes made:
 
 把基于`rag`的混淆思路写的清晰流畅后，不仅减少模型思维链思考时长，还可能会有额外的"惊喜"
 
+```prompt
+[obfus_level] tag1_2
+[obfus_desc] Randomized repositioning of variable declarations and initializations strictly within their lexical scope. For each variable, the declaration must appear before its initialization, and both must precede the variable's first use in the control flow. This process preserves semantic correctness while disrupting variable lifecycle locality.
+[content] 
+This obfuscation type targets **named local variable declarations** within a function or block scope. For each variable:
+- If a declaration and initialization appear in a single statement (e.g., `int x = 5;`), the transformation will split this into two separate statements (`int x;` and `x = 5;`).
+- Both declaration and initialization will then be randomly relocated, as long as:
+  1. The declaration appears **before** the initialization.
+  2. Both appear **before** the first usage of the variable.
+  3. All movements remain within the original lexical scope.
+
+The transformation must preserve:
+- Variable names, types, modifiers (e.g., annotations).
+- The control-flow behavior and semantic correctness of the program.
+- The original position of the **first usage**.
+
+This form of obfuscation is designed to confuse static analyzers and models by breaking common assumptions about variable lifecycle locality.
+
+[constraints] 
+The transformation is governed by the following constraints:
+- This transformation applies to the **declaration and initialization positions** of each variable.
+- Both **declaration** and **initialization** must remain strictly **within the lexical scope** in which the variable was originally declared (e.g., inside a `try`, `if`, or `loop` block).
+- The **declaration must appear before the initialization**, and the **initialization must appear before the variable’s first usage** in the control flow.
+- If a variable is declared and initialized together (e.g., `int i = 0;`), they may be **split** into separate statements (e.g., `int i; i = 0;`).
+- Variable names, types, modifiers, the initialization value, and the first use position **must all remain unchanged**：
+    - Variable **declaration and initialization** may be split, but must **remain in order**: declaration → initialization → first use.
+    - Variable **usage lines** must remain unchanged in line number and structure.
+    - No renaming, inlining, merging, hoisting, or deletion is allowed.
+    - All transformations must be performed **within the variable’s declared lexical scope** only (e.g., loop body, method block).
+
+[typical_changes] 
+Typical changes include:
+- Splitting `declaration + initialization` into separate lines (e.g., transforming `int i = 0;` into `int i; i = 0;`).
+- Splitting or merging declarations of multiple variables of the same type (e.g., `int i, j;` vs. `int i; int j;`), provided their scope and usage order remain valid.
+- Relocating local variable `declarations` and/or `initializations` randomly between **the beginning of its lexical scope** and **its first usage position**, while ensuring that **declarations precede initializations**, and both occur **before the first usage**.
+- Ensuring that each variable's name, type, modifiers, the initialization value, and the first use position remain unchanged, so the semantic behavior of the program is fully preserved.
+
+[algorithm] 
+For each local variable:
+1. Detect the line where it is declared and initialized (may be the same line).
+2. Identify the earliest line where the variable is first used.
+3. Split declaration and initialization into two statements, if not already split.
+4. Randomly position the declaration and initialization within the allowable range:
+   - Declaration can go anywhere from the start of the lexical scope to just before initialization.
+   - Initialization can go anywhere after the declaration but before the first use.
+5. Ensure first use line is untouched and still receives the correct value.
+**FALLBACK: If a variable cannot be legally moved (e.g., used in a lambda, or control-flow-sensitive position), skip its transformation and leave it unchanged.
+
+[code_language] java
+[original_code]
+//write original code
+
+Please provide the obfuscated code according to the obfuscation method described above.
+```
+
+
+
 # DeCoMa
 
 这篇论文《DeCoMa: Detecting and Purifying Code Dataset Watermarks through Dual Channel Code Abstraction》主要提出了一种名为 **DeCoMa** 的新方法，用于**检测和清除代码数据集中的水印**。其核心贡献和工作内容可以总结如下：

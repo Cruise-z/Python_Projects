@@ -26,6 +26,9 @@ def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tup
                     Scope[-1] += " (unchanged)"
                 else:
                     Scope.append(" (unchanged)")
+                UseFpos = (
+                    (ori.useFPos[0] + " (unchanged)", ori.useFPos[1])
+                    if ori.useFPos is not None else None)
                 
                 # 过滤掉提取或本身有问题的变量实体
                 if ori.decPos is None or ori.initPos is None or ori.useFPos is None or obf.decPos is None or obf.initPos is None or obf.useFPos is None:
@@ -44,7 +47,7 @@ def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tup
                     scope=Scope,
                     decPosDiff=(ori.decPos, obf.decPos),
                     initPosDiff=(ori.initPos, obf.initPos),
-                    useFPosDiff=(ori.useFPos, obf.useFPos),
+                    useFPos=UseFpos,
                     strategy=Strategy,
                 )
                 ents.append(ori)

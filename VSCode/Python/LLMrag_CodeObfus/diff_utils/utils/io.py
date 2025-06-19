@@ -104,9 +104,10 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
         class_name = func_name.split(".")[0]
         
         try:
-            format_origin = format_func(class_name, json_data["code"], lang)
-            # format_obfus = format_func(class_name, json_data["after_obfus"], lang)
-            format_obfus = format_func(class_name, json_data["after_watermark"], lang)
+            origin = format_func(class_name, json_data["code"], lang)
+            # obfus = format_func(class_name, json_data["after_obfus"], lang)
+            obfus = format_func(class_name, json_data["after_watermark"], lang)
+            format_origin, format_obfus = align_CodeBlocks(origin, obfus)
         except RuntimeError as e:
             continue
         
@@ -127,10 +128,10 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
             "obfus_desc": obfus_type.desc,
             "constraints": obfus_type.constraints,
             "typical_changes": obfus_type.typical_changes,
+            "algorithm": obfus_type.algorithm,
             "extracted_entities": "\n".join(format_entity(ent) for ent in ents),
-            "original_code": json_data["code"],
-            # "obfuscated_code": json_data["after_obfus"],
-            "obfuscated_code": json_data["after_watermark"],
+            "original_code": format_origin,
+            "obfuscated_code": format_obfus,
             "diff": "\n".join(format_entity(diff) for diff in diffs),
         }
         
@@ -177,7 +178,7 @@ def doc2embedData(obfus_type:ObfusType):
         if metadata.get("language"):
             lines.append(f"<code_language> {metadata['language']}")
         if metadata.get("original_code"):
-            format_origin = format_func(class_name, metadata['original_code'], metadata["language"])
+            format_origin = metadata['original_code']
             attach_lineNum_ori = attach_lineNum_func(format_origin)
             lines.append(f"<original_code>\n{attach_lineNum_ori}\n")
         if metadata.get("extracted_entities"):
@@ -191,9 +192,11 @@ def doc2embedData(obfus_type:ObfusType):
                 lines.append(f"[constraints] {metadata['constraints']}")
             if metadata.get("typical_changes"):
                 lines.append(f"[typical_changes] {metadata['typical_changes']}")
+            if metadata.get("algorithm"):
+                lines.append(f"[algorithm] {metadata['algorithm']}")
             lines.append(f"[diff]\n{metadata['diff']}\n")
         if metadata.get("obfuscated_code"):
-            format_obfus = format_func(class_name, metadata['obfuscated_code'], metadata["language"])
+            format_obfus = metadata['obfuscated_code']
             attach_lineNum_obfus = attach_lineNum_func(format_obfus)
             lines.append(f"<obfuscated_code>\n{attach_lineNum_obfus}\n")
 
