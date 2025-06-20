@@ -154,9 +154,10 @@ def doc2embedData(obfus_type:ObfusType):
     doc_dir = "./jsonData/categorized"
     doc_name = f"{obfus_type.name}.pkl"
     doc_path = os.path.join(doc_dir, doc_name)
+    Extern_dir = "/media/zrz/SSD/LLMrag_CodeObfus/jsonData/categorized"
     with open(doc_path, 'rb') as f:
         documents = pickle.load(f)
-    dest_dir = os.path.join(doc_dir, f"{documents[0].metadata['obfus_level']}")
+    dest_dir = os.path.join(Extern_dir, f"{documents[0].metadata['obfus_level']}")
     os.makedirs(dest_dir, exist_ok=True)
     
     width = len(str(len(documents)))  # 计算文件名宽度

@@ -179,7 +179,7 @@ class diffTag1_2:
     strategy: str             # 位置随机化策略，默认为 "rename"
 
 
-def format_func(class_name:str, codefunc:str, lang:str) -> str:
+def format_func_deprecated(class_name:str, codefunc:str, lang:str) -> str:
     """
     使用 google-java-format 对 Java 源码进行格式化。
     """
@@ -200,6 +200,114 @@ def format_func(class_name:str, codefunc:str, lang:str) -> str:
     format_func = stdout
     # match = re.search(r"public class Example \{\n(.*)\n\}", stdout, re.DOTALL)
     # format_func = textwrap.dedent(match.group(1))
+    return format_func
+
+def preprocess_code(code: str) -> str:
+    """
+    预处理 Java 等类 C 语言代码字符串：
+    - 移除所有换行符、缩进符（\r \n \t 等）
+    - 移除单行注释（//...）与多行注释（/*...*/）
+    - 保留字符串与字符字面量，含转义字符
+    - 输出一行干净的代码文本
+    """
+
+    _STRING_PLACEHOLDER = "__<STR:%d>__"
+    literals: List[str] = []
+
+    def freeze_literals(src: str) -> str:
+        """用占位符替换字符串与字符字面量"""
+        def _store(match):
+            idx = len(literals)
+            literals.append(match.group(0))
+            return _STRING_PLACEHOLDER % idx
+
+        pattern = r'"(?:\\.|[^"\\])*"' + r"|'(?:\\.|[^'\\])'"  # 支持字符串和字符
+        return re.sub(pattern, _store, src)
+
+    def remove_comments(src: str) -> str:
+        """移除单行和多行注释"""
+        no_block_comments = re.sub(r'/\*.*?\*/', '', src, flags=re.DOTALL)
+        no_line_comments = re.sub(r'//.*$', '', no_block_comments, flags=re.MULTILINE)
+        return no_line_comments
+
+    def collapse_whitespace(src: str) -> str:
+        """将所有空白符折叠为单个空格"""
+        return re.sub(r'\s+', ' ', src).strip()
+
+    def restore_literals(src: str) -> str:
+        """恢复之前冻结的字符串字面量"""
+        def _restore(match):
+            idx = int(match.group(1))
+            return literals[idx]
+        return re.sub(r'__<STR:(\d+)>__', _restore, src)
+
+    # === 执行流程 ===
+    code_frozen = freeze_literals(code)
+    code_no_comments = remove_comments(code_frozen)
+    code_flat = collapse_whitespace(code_no_comments)
+    code_restored = restore_literals(code_flat)
+
+    return code_restored
+
+def valid_check(codefunc: str, lang: str) -> bool:
+    if lang == 'java':
+        jar_path = "build/CodeFormat_adapter/google-java-format-1.27.0-all-deps.jar"
+        try:
+            proc = subprocess.run(
+                ["java", "-jar", jar_path, "--dry-run", "-"],
+                input=codefunc,
+                stdout=subprocess.DEVNULL,  # 避免收集不必要输出
+                stderr=subprocess.DEVNULL,  # 降低 I/O 延迟
+                text=True,
+                timeout=2.0  # 防止卡死
+            )
+            print(proc.returncode)
+            return proc.returncode == 0
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired):
+            return False
+    else:
+        return False
+
+def format_func(class_name:str, codefunc:str, lang:str) -> str:
+    """
+    使用 Eclipse-java-format 对 Java 源码进行自定义格式化。
+    依赖外部 Eclipse 安装和 formatter 配置。
+    """
+    codefunc = preprocess_code(codefunc)  # 预处理代码，移除注释和多余空格
+    Wrapped_func = f"public class {class_name} {{{codefunc}}}"
+    print(Wrapped_func)
+    
+    if lang == 'java':
+        if not valid_check(Wrapped_func, lang):
+            raise RuntimeError("Failed")
+        eclipse_path = "/home/zrz/software/eclipse-java/eclipse/eclipse"
+        workspace_path = "/home/zrz/Projects/EclipseProject"
+        config_path = "build/CodeFormat_adapter/format_style.xml"
+        temp_path = "/media/zrz/SSD/temp.java"
+        # 写入临时 Java 文件
+        with open(temp_path, "w", encoding="utf-8") as tmpfile:
+            tmpfile.write(Wrapped_func)
+            
+        subprocess.run(
+            [
+                eclipse_path,
+                "-nosplash",
+                "-data", workspace_path,
+                "-application", "org.eclipse.jdt.core.JavaCodeFormatter",
+                "-config", config_path,
+                temp_path,
+                "-vmargs", "-Dfile.encoding=UTF-8"
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        # 读取格式化后的 Java 文件内容
+        with open(temp_path, "r", encoding="utf-8") as formatted_file:
+            format_func = formatted_file.read()
+        format_func = format_func.replace('\t', '    ')
+    else:
+        format_func = codefunc  # 对于未集成格式化插件的语言，直接返回原始代码
     return format_func
 
 # 1. Normalize lines (with literal abstraction)
@@ -289,49 +397,9 @@ def align_by_lcs_blocks_with_stable_pairs(a: List[str], b: List[str]) -> Tuple[L
 
 # 5. Align wrapper with blank-line filtering
 def align_CodeBlocks(code1: str, code2: str) -> Tuple[str, str]:
-    # align_code_blocks_strict_semantics
-    _STRING_PLACEHOLDER = "__<STR:%d>__"
-    def _freeze_string_literals(src: str) -> Tuple[str, List[str]]:
-        """Replace string literals with placeholders, return new src & list of literals."""
-        literals = []
-        def _store(match):
-            idx = len(literals)
-            literals.append(match.group(0))
-            return _STRING_PLACEHOLDER % idx
-        frozen = re.sub(r'"(?:\\.|[^"\\])*"', _store, src)
-        return frozen, literals
-
-    def _thaw_string_literals(src: str, literals: List[str]) -> str:
-        """Put literals back into the placeholder positions."""
-        def _restore(match):
-            idx = int(match.group(1))
-            return literals[idx]
-        return re.sub(r'__<STR:(\d+)>__', _restore, src)
-
-    def preprocess_code_lines(code: str) -> List[str]:
-        """
-        Remove:
-        • all // line comments
-        • all /* ... */ or /** ... */ block comments (multiline)
-        • empty / whitespace-only lines
-        Preserve:
-        • string literals (no false deletions)
-        """
-        # 1) Freeze string literals to avoid false comment matches
-        frozen_code, saved_literals = _freeze_string_literals(code)
-        # 2) Remove block comments (non-greedy, DOTALL for multiline)
-        no_blocks = re.sub(r'/\*.*?\*/', '', frozen_code, flags=re.DOTALL)
-        # 3) Remove single-line comments
-        no_line_comments = re.sub(r'//.*$', '', no_blocks, flags=re.MULTILINE)
-        # 4) Thaw string literals back
-        thawed = _thaw_string_literals(no_line_comments, saved_literals)
-        # 5) Split into lines, preserve indentation, drop empty
-        cleaned = [ln for ln in thawed.splitlines() if ln.strip()]
-        return cleaned
-
-    clean_lines1 = preprocess_code_lines(code1)
-    clean_lines2 = preprocess_code_lines(code2)
-
+    clean_lines1 = code1.splitlines()
+    clean_lines2 = code2.splitlines()
+    
     aligned_clean1, aligned_clean2 = align_by_lcs_blocks_with_stable_pairs(clean_lines1, clean_lines2)
     return "\n".join(aligned_clean1), "\n".join(aligned_clean2)
 
