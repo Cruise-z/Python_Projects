@@ -178,6 +178,27 @@ class diffTag1_2:
     useFPos: Optional[Tuple[str, int]]
     strategy: str             # 位置随机化策略，默认为 "rename"
 
+def highlight_print(text, fg='white', bg=None, bold=True):
+    color_codes = {
+        'black': 30, 'red': 31, 'green': 32, 'yellow': 33,
+        'blue': 34, 'magenta': 35, 'cyan': 36, 'white': 37
+    }
+    bg_codes = {k: v + 10 for k, v in color_codes.items()}
+
+    parts = ['\033[']
+    if bold:
+        parts.append('1;')
+    parts.append(str(color_codes.get(fg, 37)))  # default to white
+
+    if bg:
+        parts.append(f';{bg_codes.get(bg, 40)}')  # default bg to black if unknown
+
+    parts.append('m')
+    parts.append(str(text))
+    parts.append('\033[0m\n')
+
+    print(''.join(parts))
+
 
 def format_func_deprecated(class_name:str, codefunc:str, lang:str) -> str:
     """
@@ -261,7 +282,6 @@ def valid_check(codefunc: str, lang: str) -> bool:
                 text=True,
                 timeout=2.0  # 防止卡死
             )
-            print(proc.returncode)
             return proc.returncode == 0
         except (subprocess.SubprocessError, subprocess.TimeoutExpired):
             return False
@@ -274,12 +294,12 @@ def format_func(class_name:str, codefunc:str, lang:str) -> str:
     依赖外部 Eclipse 安装和 formatter 配置。
     """
     codefunc = preprocess_code(codefunc)  # 预处理代码，移除注释和多余空格
-    Wrapped_func = f"public class {class_name} {{{codefunc}}}"
-    print(Wrapped_func)
     
     if lang == 'java':
+        Wrapped_func = f"public class {class_name} {{{codefunc}}}"
         if not valid_check(Wrapped_func, lang):
             raise RuntimeError("Failed")
+        highlight_print(f"Valid check passed for func:\n{Wrapped_func}", fg='black', bg='yellow')
         eclipse_path = "/home/zrz/software/eclipse-java/eclipse/eclipse"
         workspace_path = "/home/zrz/Projects/EclipseProject"
         config_path = "build/CodeFormat_adapter/format_style.xml"
