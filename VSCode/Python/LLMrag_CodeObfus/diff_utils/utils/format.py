@@ -280,7 +280,7 @@ def valid_check(codefunc: str, lang: str) -> bool:
                 stdout=subprocess.DEVNULL,  # 避免收集不必要输出
                 stderr=subprocess.DEVNULL,  # 降低 I/O 延迟
                 text=True,
-                timeout=2.0  # 防止卡死
+                timeout=10.0  # 防止卡死
             )
             return proc.returncode == 0
         except (subprocess.SubprocessError, subprocess.TimeoutExpired):
@@ -333,31 +333,31 @@ def format_func(class_name:str, codefunc:str, lang:str) -> str:
 # 1. Normalize lines (with literal abstraction)
 def normalize_code_line_literal_aware(line: str) -> str:
     """
-    Normalize code line for syntax-tolerant comparison:
-    - Strip leading/trailing spaces
-    - Reduce multiple spaces to one
-    - Remove trailing semicolons and inline comments (basic)
+    Normalize code line by:
+    - Removing all whitespace characters
+    - Removing trailing semicolons
+    - Converting to lowercase
     """
-    line = line.strip()
-    line = re.sub(r'"[^"]*"', '"STR"', line)  # Normalize string literals
-    line = re.sub(r'\s+', ' ', line)
-    line = re.sub(r';\s*$', '', line)
-    line = re.sub(r'//.*$', '', line)
-    return line.strip()
+    line = re.sub(r'\s+', '', line)         # 移除所有空白字符
+    line = re.sub(r';+$', '', line)         # 去除末尾分号（包括多个 ;;）
+    line = line.lower()                     # 全部转为小写
+    return line
 
 # 2. Reverse token similarity with normalization
-def reversed_token_similarity(line1: str, line2: str) -> float:
-    tokens1 = normalize_code_line_literal_aware(line1).split()
-    tokens2 = normalize_code_line_literal_aware(line2).split()
-    tokens1.reverse()
-    tokens2.reverse()
-    match_count = 0
-    for t1, t2 in zip(tokens1, tokens2):
-        if t1 == t2:
-            match_count += 1
+def reversed_suffix_similarity(line1: str, line2: str) -> float:
+    s1 = normalize_code_line_literal_aware(line1)
+    s2 = normalize_code_line_literal_aware(line2)
+    rev1 = s1[::-1]
+    rev2 = s2[::-1]
+
+    match_len = 0
+    for c1, c2 in zip(rev1, rev2):
+        if c1 == c2:
+            match_len += 1
         else:
             break
-    return match_count / max(len(tokens1), len(tokens2), 1)
+
+    return match_len / max(len(s1), len(s2), 1)
 
 # 3. Stable alignment of line blocks
 def stable_pair_blocks(A: List[str], B: List[str], threshold=0.3) -> Tuple[List[str], List[str]]:
@@ -365,15 +365,15 @@ def stable_pair_blocks(A: List[str], B: List[str], threshold=0.3) -> Tuple[List[
     i, j = 0, 0
     while i < len(A) or j < len(B):
         if i < len(A) and j < len(B):
-            sim = reversed_token_similarity(A[i], B[j])
+            sim = reversed_suffix_similarity(A[i], B[j])
             if sim >= threshold:
                 alignedA.append(A[i])
                 alignedB.append(B[j])
                 i += 1
                 j += 1
             else:
-                score_i = reversed_token_similarity(A[i], B[j+1]) if j+1 < len(B) else 0
-                score_j = reversed_token_similarity(A[i+1], B[j]) if i+1 < len(A) else 0
+                score_i = reversed_suffix_similarity(A[i], B[j+1]) if j+1 < len(B) else 0
+                score_j = reversed_suffix_similarity(A[i+1], B[j]) if i+1 < len(A) else 0
                 if score_i >= score_j:
                     alignedA.append('')
                     alignedB.append(B[j])
@@ -394,8 +394,11 @@ def stable_pair_blocks(A: List[str], B: List[str], threshold=0.3) -> Tuple[List[
 
 # 4. Main alignment by LCS + token semantics
 def align_by_lcs_blocks_with_stable_pairs(a: List[str], b: List[str]) -> Tuple[List[str], List[str]]:
-    matcher = SequenceMatcher(None, [normalize_code_line_literal_aware(x) for x in a],
-                                     [normalize_code_line_literal_aware(x) for x in b])
+    matcher = SequenceMatcher(
+        None, 
+        [x for x in a], 
+        [x for x in b]
+    )
     aligned_a, aligned_b = [], []
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == 'equal':
@@ -417,10 +420,10 @@ def align_by_lcs_blocks_with_stable_pairs(a: List[str], b: List[str]) -> Tuple[L
 
 # 5. Align wrapper with blank-line filtering
 def align_CodeBlocks(code1: str, code2: str) -> Tuple[str, str]:
-    clean_lines1 = code1.splitlines()
-    clean_lines2 = code2.splitlines()
+    lines1 = code1.splitlines()
+    lines2 = code2.splitlines()
     
-    aligned_clean1, aligned_clean2 = align_by_lcs_blocks_with_stable_pairs(clean_lines1, clean_lines2)
+    aligned_clean1, aligned_clean2 = align_by_lcs_blocks_with_stable_pairs(lines1, lines2)
     return "\n".join(aligned_clean1), "\n".join(aligned_clean2)
 
 def attach_lineNum_func(formatcode: str) -> str:
