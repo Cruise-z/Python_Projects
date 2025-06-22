@@ -356,74 +356,66 @@ def reversed_suffix_similarity(line1: str, line2: str) -> float:
             match_len += 1
         else:
             break
-
-    return match_len / max(len(s1), len(s2), 1)
+    if match_len == 0:
+        return 0.0
+    # 使用乘积相似度
+    return (match_len / max(len(s1), 1)) * (match_len / max(len(s2), 1))
 
 # 3. Stable alignment of line blocks
-def stable_pair_blocks(A: List[str], B: List[str], threshold=0.3) -> Tuple[List[str], List[str]]:
+def stable_pair_blocks(A: List[str], B: List[str], base_threshold=0.3, lookahead_window=15) -> Tuple[List[str], List[str]]:
     alignedA, alignedB = [], []
-    i, j = 0, 0
-    while i < len(A) or j < len(B):
-        if i < len(A) and j < len(B):
-            sim = reversed_suffix_similarity(A[i], B[j])
-            if sim >= threshold:
-                alignedA.append(A[i])
-                alignedB.append(B[j])
-                i += 1
-                j += 1
-            else:
-                score_i = reversed_suffix_similarity(A[i], B[j+1]) if j+1 < len(B) else 0
-                score_j = reversed_suffix_similarity(A[i+1], B[j]) if i+1 < len(A) else 0
-                if score_i >= score_j:
-                    alignedA.append('')
-                    alignedB.append(B[j])
-                    j += 1
-                else:
-                    alignedA.append(A[i])
-                    alignedB.append('')
-                    i += 1
-        elif i < len(A):
-            alignedA.append(A[i])
-            alignedB.append('')
-            i += 1
+    i, j = 0, 0  # j 是 B 中当前位置
+
+    while i < len(A):
+        lineA = A[i]
+        best_sim = 0.0
+        best_j = -1
+
+        # 滑动窗口：从当前 j 向前看
+        for k in range(j, min(j + lookahead_window, len(B))):
+            sim = reversed_suffix_similarity(lineA, B[k])
+            if sim > best_sim:
+                best_sim = sim
+                best_j = k
+
+        # 动态阈值
+        lenA = len(normalize_code_line_literal_aware(lineA))
+        if best_j != -1:
+            lenB = len(normalize_code_line_literal_aware(B[best_j]))
+            dynamic_threshold = max(0.15, base_threshold * (1 - abs(lenA - lenB) / max(lenA, lenB, 1)))
         else:
-            alignedA.append('')
-            alignedB.append(B[j])
-            j += 1
+            dynamic_threshold = 1.0
+
+        if best_sim >= dynamic_threshold and best_j != -1:
+            # 补齐 B 中未对齐行
+            while j < best_j:
+                alignedA.append("")
+                alignedB.append(B[j])
+                j += 1
+            # 正常对齐
+            alignedA.append(lineA)
+            alignedB.append(B[best_j])
+            j = best_j + 1
+        else:
+            # 无匹配
+            alignedA.append(lineA)
+            alignedB.append("")
+        i += 1
+
+    # 补齐剩余 B
+    while j < len(B):
+        alignedA.append("")
+        alignedB.append(B[j])
+        j += 1
+
     return alignedA, alignedB
 
-# 4. Main alignment by LCS + token semantics
-def align_by_lcs_blocks_with_stable_pairs(a: List[str], b: List[str]) -> Tuple[List[str], List[str]]:
-    matcher = SequenceMatcher(
-        None, 
-        [x for x in a], 
-        [x for x in b]
-    )
-    aligned_a, aligned_b = [], []
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == 'equal':
-            aligned_a.extend(a[i1:i2])
-            aligned_b.extend(b[j1:j2])
-        elif tag == 'replace':
-            block_a = a[i1:i2]
-            block_b = b[j1:j2]
-            smart_a, smart_b = stable_pair_blocks(block_a, block_b)
-            aligned_a.extend(smart_a)
-            aligned_b.extend(smart_b)
-        elif tag == 'delete':
-            aligned_a.extend(a[i1:i2])
-            aligned_b.extend([''] * (i2 - i1))
-        elif tag == 'insert':
-            aligned_a.extend([''] * (j2 - j1))
-            aligned_b.extend(b[j1:j2])
-    return aligned_a, aligned_b
-
-# 5. Align wrapper with blank-line filtering
+# 4. Align wrapper with blank-line filtering
 def align_CodeBlocks(code1: str, code2: str) -> Tuple[str, str]:
     lines1 = code1.splitlines()
     lines2 = code2.splitlines()
     
-    aligned_clean1, aligned_clean2 = align_by_lcs_blocks_with_stable_pairs(lines1, lines2)
+    aligned_clean1, aligned_clean2 = stable_pair_blocks(lines1, lines2)
     return "\n".join(aligned_clean1), "\n".join(aligned_clean2)
 
 def attach_lineNum_func(formatcode: str) -> str:
