@@ -358,64 +358,67 @@ def reversed_suffix_similarity(line1: str, line2: str) -> float:
             break
     if match_len == 0:
         return 0.0
-    # 使用乘积相似度
+    # 使用乘积相似度的奖励机制：
+    # 1. 两字符串完全相等-> 得分=1
+    # 2. 两字符串其中一个为另一个的子串-> 得分=两串长度之比<1
+    # 3. 两字符串均为部分匹配-> 得分<两串长度之比
     return (match_len / max(len(s1), 1)) * (match_len / max(len(s2), 1))
 
-# 3. Stable alignment of line blocks
-def stable_pair_blocks(A: List[str], B: List[str], base_threshold=0.3, lookahead_window=15) -> Tuple[List[str], List[str]]:
+# 3. 动态规划全局对齐（Needleman-Wunsch）
+def dp_align(A: List[str], B: List[str], gap_cost=0.3) -> Tuple[List[str], List[str]]:
+    n, m = len(A), len(B)
+    dp = [[0.0] * (m + 1) for _ in range(n + 1)]
+    back = [[None] * (m + 1) for _ in range(n + 1)]  # 记录回溯路径
+
+    # 初始化边界
+    for i in range(1, n + 1):
+        dp[i][0] = -i * gap_cost
+        back[i][0] = 'up'
+    for j in range(1, m + 1):
+        dp[0][j] = -j * gap_cost
+        back[0][j] = 'left'
+
+    # 填表
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            match = dp[i-1][j-1] + reversed_suffix_similarity(A[i-1], B[j-1])
+            delete = dp[i-1][j] - gap_cost
+            insert = dp[i][j-1] - gap_cost
+
+            dp[i][j] = max(match, delete, insert)
+            if dp[i][j] == match:
+                back[i][j] = 'diag'
+            elif dp[i][j] == delete:
+                back[i][j] = 'up'
+            else:
+                back[i][j] = 'left'
+
+    # 回溯
     alignedA, alignedB = [], []
-    i, j = 0, 0  # j 是 B 中当前位置
-
-    while i < len(A):
-        lineA = A[i]
-        best_sim = 0.0
-        best_j = -1
-
-        # 滑动窗口：从当前 j 向前看
-        for k in range(j, min(j + lookahead_window, len(B))):
-            sim = reversed_suffix_similarity(lineA, B[k])
-            if sim > best_sim:
-                best_sim = sim
-                best_j = k
-
-        # 动态阈值
-        lenA = len(normalize_code_line_literal_aware(lineA))
-        if best_j != -1:
-            lenB = len(normalize_code_line_literal_aware(B[best_j]))
-            dynamic_threshold = max(0.15, base_threshold * (1 - abs(lenA - lenB) / max(lenA, lenB, 1)))
-        else:
-            dynamic_threshold = 1.0
-
-        if best_sim >= dynamic_threshold and best_j != -1:
-            # 补齐 B 中未对齐行
-            while j < best_j:
-                alignedA.append("")
-                alignedB.append(B[j])
-                j += 1
-            # 正常对齐
-            alignedA.append(lineA)
-            alignedB.append(B[best_j])
-            j = best_j + 1
-        else:
-            # 无匹配
-            alignedA.append(lineA)
+    i, j = n, m
+    while i > 0 or j > 0:
+        if back[i][j] == 'diag':
+            alignedA.append(A[i-1])
+            alignedB.append(B[j-1])
+            i -= 1
+            j -= 1
+        elif back[i][j] == 'up':
+            alignedA.append(A[i-1])
             alignedB.append("")
-        i += 1
+            i -= 1
+        else:  # 'left'
+            alignedA.append("")
+            alignedB.append(B[j-1])
+            j -= 1
 
-    # 补齐剩余 B
-    while j < len(B):
-        alignedA.append("")
-        alignedB.append(B[j])
-        j += 1
-
-    return alignedA, alignedB
+    return alignedA[::-1], alignedB[::-1]
 
 # 4. Align wrapper with blank-line filtering
 def align_CodeBlocks(code1: str, code2: str) -> Tuple[str, str]:
     lines1 = code1.splitlines()
     lines2 = code2.splitlines()
     
-    aligned_clean1, aligned_clean2 = stable_pair_blocks(lines1, lines2)
+    aligned_clean1, aligned_clean2 = dp_align(lines1, lines2)
     return "\n".join(aligned_clean1), "\n".join(aligned_clean2)
 
 def attach_lineNum_func(formatcode: str) -> str:
