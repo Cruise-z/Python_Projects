@@ -124,6 +124,115 @@ def generate_scope_diff(ori_scope:List[str], obf_scope:List[str]) -> list[str]:
             diff.append(ori)
     return diff
 
+def insertableVarPos(format_code: str, var_name: str, DecPos: int, FusePos: int) -> Tuple[int, int, List[Tuple[int, int]]]:
+    lines = format_code.split('\n')
+    declare_idx = DecPos - 1
+
+    var_pos = lines[declare_idx].find(var_name)
+    if var_pos == -1:
+        raise ValueError(f"变量 `{var_name}` 未在第 {DecPos} 行中找到")
+
+    upper_lines = lines[:declare_idx] + [lines[declare_idx][:var_pos]]
+    stack = 0
+    scope_start = None
+    for i in range(len(upper_lines) - 1, -1, -1):
+        for ch in reversed(upper_lines[i]):
+            if ch == '}':
+                stack += 1
+            elif ch == '{':
+                if stack > 0:
+                    stack -= 1
+                else:
+                    scope_start = i + 1
+                    break
+        if scope_start is not None:
+            break
+
+    stack = 0
+    block_stack = []
+    all_block_ranges = []
+    scope_end = None
+
+    for i in range(scope_start - 1, len(lines)):
+        line = lines[i]
+        for ch in line:
+            if ch == '{':
+                block_stack.append(i + 1)
+                stack += 1
+            elif ch == '}':
+                if stack > 0:
+                    start_line = block_stack.pop()
+                    all_block_ranges.append((start_line, i + 1))
+                    stack -= 1
+                    if scope_end is None and stack == 0:
+                        scope_end = i + 1
+        if scope_end is not None and stack == 0:
+            break
+
+    if scope_start is None or scope_end is None:
+        raise ValueError("未能识别完整作用域")
+
+    def get_max_blocks(blocks: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        blocks.sort()
+        max_blocks = []
+        last_start, last_end = -1, -1
+        for start, end in blocks:
+            if last_start <= start and end <= last_end:
+                continue
+            max_blocks.append((start, end))
+            last_start, last_end = start, end
+        return max_blocks
+
+    scoped_blocks = [(s, e) for (s, e) in all_block_ranges if scope_start < s and e < scope_end]
+    max_child_blocks = get_max_blocks(scoped_blocks)
+        
+    def insertable_boundaries(scope_start: int, scope_end: int, max_child_blocks: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        if not max_child_blocks:
+            return [(scope_start, scope_end)]
+
+        merged_blocks = []
+        for block in sorted(max_child_blocks):
+            if not merged_blocks:
+                merged_blocks.append(block)
+            else:
+                last_start, last_end = merged_blocks[-1]
+                curr_start, curr_end = block
+                if last_end == curr_start:
+                    merged_blocks[-1] = (last_start, curr_end)
+                else:
+                    merged_blocks.append(block)
+
+        insert_boundaries = []
+        curr = scope_start
+        for start, end in merged_blocks:
+            if curr < start:
+                insert_boundaries.append((curr, start))
+            curr = end
+        if curr < scope_end:
+            insert_boundaries.append((curr, scope_end))
+
+        return insert_boundaries
+    bounds = insertable_boundaries(scope_start, scope_end, max_child_blocks)
+    if not bounds:
+        raise ValueError("未找到可插入变量的位置")
+    
+    def filter_bounds_before_use(bounds: List[Tuple[int, int]], FusePos: int) -> List[Tuple[int, int]]:
+        filtered = []
+        for start, end in bounds:
+            if end <= FusePos:
+                filtered.append((start, end))
+            elif start < FusePos:
+                # 如果区间跨过了使用位置，只保留前半部分
+                filtered.append((start, FusePos))
+                break
+            else:
+                break
+        return filtered
+    bounds = filter_bounds_before_use(bounds, FusePos)
+    if not bounds:
+        raise ValueError("变量使用有误，未找到可插入位置")
+    
+    return bounds
 
 # def match_entities_by_key(
 #     ent1: List[renameableEntity],
