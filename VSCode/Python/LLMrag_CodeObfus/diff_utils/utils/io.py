@@ -192,7 +192,7 @@ def doc2embedData(obfus_type:ObfusType):
             attach_lineNum_ori = attach_lineNum_func(format_origin)
             lines.append(f"<original_code>\n{attach_lineNum_ori}\n</original_code>\n")
         if metadata.get("extracted_entities"):
-            lines.append("<Process> First extract renameable entities from the original code:")
+            lines.append("<Process> First extract usable entities from the original code:")
             content = metadata['extracted_entities']
             indented_entities = "\n".join("\t" + line for line in content.splitlines())
             lines.append(f"\t[extracted_entities]\n{indented_entities}\n")
