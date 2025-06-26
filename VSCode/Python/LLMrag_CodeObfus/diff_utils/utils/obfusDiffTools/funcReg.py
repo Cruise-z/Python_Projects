@@ -8,7 +8,7 @@ def register(tag):
         return func
     return decorator
 
-def tagDiff(tag:str, *args, **kwargs):
+def tagFunc(tag:str, *args, **kwargs):
     func = funcRegister.get(tag)
     if func:
         return func(*args, **kwargs)

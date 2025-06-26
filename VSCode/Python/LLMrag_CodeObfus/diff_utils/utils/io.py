@@ -1,7 +1,8 @@
 import os
 import pickle
 import json
-from .obfusDiffTools.funcReg import tagDiff
+from .obfusDiffTools._tagDesc import ObfusType
+from .obfusDiffTools.funcReg import tagFunc
 from .obfusDiffTools.reEnt import *
 from .obfusDiffTools.varPos import *
 from .format import *
@@ -111,7 +112,17 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
         except RuntimeError as e:
             continue
         
-        ents, diffs = tagDiff(obfus_type.name, wparser, format_origin, format_obfus)
+        fEnts = []
+        fDiffs = []
+        ents, diffs = tagFunc(f"{obfus_type.name}_entDiff", wparser, format_origin, format_obfus)
+        for ent in ents:
+            fEnt = tagFunc(f"{obfus_type.name}_entExt", ent, format_origin)
+            fEnt = json.dumps(fEnt, indent=2, ensure_ascii=False)
+            fEnts.append(fEnt)
+        for diff in diffs:
+            fDiff = tagFunc(f"{obfus_type.name}_diffExt", diff)
+            fDiff = json.dumps(fDiff, indent=2, ensure_ascii=False)
+            fDiffs.append(fDiff)
         
         if not diffs:
             continue
@@ -129,10 +140,10 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
             "constraints": obfus_type.constraints,
             "typical_changes": obfus_type.typical_changes,
             "algorithm": obfus_type.algorithm,
-            "extracted_entities": "\n".join(format_entity(ent) for ent in ents),
+            "extracted_entities": "\n".join(fEnt for fEnt in fEnts),
             "original_code": format_origin,
             "obfuscated_code": format_obfus,
-            "diff": "\n".join(format_entity(diff) for diff in diffs),
+            "diff": "\n".join(fDiff for fDiff in fDiffs),
         }
         
         doc = Document(

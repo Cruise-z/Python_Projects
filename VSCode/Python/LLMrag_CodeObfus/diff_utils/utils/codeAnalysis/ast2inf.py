@@ -1,6 +1,7 @@
+from ._datacls import *
 from .wparser import WParser
-from ..format import *
 from collections import defaultdict
+import re
 
 # 提取函数中所有可重命名实体（函数名、参数名、局部变量名）及其详细信息
 def extract_renameable_entities(format_code:str, wparser:WParser) -> list:

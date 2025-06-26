@@ -1,8 +1,7 @@
 from .wparser import WParser
 from .ast2inf import *
-from ..format import *
 from collections import defaultdict
-from typing import Dict, Callable
+from typing import Dict, Callable, List
 
 def make_key_fn(key_fields: List[str]) -> Callable[[renameableEntity], Tuple[Any, ...]]:
     """
@@ -124,7 +123,7 @@ def generate_scope_diff(ori_scope:List[str], obf_scope:List[str]) -> list[str]:
             diff.append(ori)
     return diff
 
-def insertableVarPos(format_code: str, var_name: str, DecPos: int, FusePos: int) -> Tuple[int, int, List[Tuple[int, int]]]:
+def varScopeGaps(format_code: str, var_name: str, DecPos: int, FusePos: int) -> Tuple[int, int, List[Tuple[int, int]]]:
     lines = format_code.split('\n')
     declare_idx = DecPos - 1
 
@@ -232,7 +231,20 @@ def insertableVarPos(format_code: str, var_name: str, DecPos: int, FusePos: int)
     if not bounds:
         raise ValueError("变量使用有误，未找到可插入位置")
     
-    return bounds
+    # 最终包装输出带内容的 insertable gaps
+    result = []
+    for start, end in bounds:
+        if 0 <= start - 1 < len(lines) and 0 <= end - 1 < len(lines):
+            result.append({
+                "start_line": start,
+                "start_content": lines[start - 1],
+                "end_line": end,
+                "end_content": lines[end - 1]
+            })
+        else:
+            raise IndexError("插入位置越界")
+
+    return result
 
 # def match_entities_by_key(
 #     ent1: List[renameableEntity],
