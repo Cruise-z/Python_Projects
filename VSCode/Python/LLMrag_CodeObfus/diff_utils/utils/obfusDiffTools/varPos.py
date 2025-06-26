@@ -42,53 +42,23 @@ Typical changes include:
 """
 
 algorithm_tag1_2 = """
-For each local variable:
-1. Detect the line where it is declared and initialized (may be the same line).
-2. Identify the earliest line where the variable is first used.
-3. Split declaration and initialization into two statements, if not already split.
-4. Randomly position the declaration and initialization within the allowable range:
-   - Declaration can go anywhere from the start of the lexical scope to just before initialization.
-   - Initialization can go anywhere after the declaration but before the first use.
-5. Ensure first use line is untouched and still receives the correct value.
+1. Find all local variables from the data stream **Entity information** extracted by Tool.
+2. For each local variable:
+	- Identify the `usage_context` field and the `DeclInitPos_rearrangeable_gaps` field. The `DeclInitPos_rearrangeable_gaps` defines legal code intervals between the declaration and initialization of the variable where they can be safely repositioned, provided both appear before the variable’s first use and within its lexical scope.
+	- In `usage_context`:
+        - if the `declaration` and `initialization` are in the same line:
+            - Split declaration and initialization into two statements
+        - if the `declaration` and `initialization` are separated:
+            - Merge `declaration` and `initialization` into a single statement.
+	- Randomly position the declaration and initialization based on the `DeclInitPos_rearrangeable_gaps` field, ensuring:
+        - if the `declaration` and `initialization` are splited:
+		    - `declaration` must appear before `initialization`
+            - They can go anywhere but must be rearranged **between these `DeclInitPos_rearrangeable_gaps`**  
+        - if the `declaration` and `initialization` are merged:
+            - The merged declaration and initialization can go anywhere but must be rearranged **between these `DeclInitPos_rearrangeable_gaps`.
+	Ensure first use line is **untouched** and still receives the previous value!
 **FALLBACK: If a variable cannot be legally moved (e.g., used in a lambda, or control-flow-sensitive position), skip its transformation and leave it unchanged.
 """
-
-@register("tag1_2_entDiff")
-def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tuple[List, List]:
-    key_list = ["entity", "kind", "type", "modifiers", "scope"]
-    matched_entities = get_matched_entities(wparser, ori_fcode, obf_fcode, key_list)
-    
-    ents = []
-    diffs = []
-    for items in matched_entities:
-        for ori, obf in items:
-            if ori.decPos is None or obf.decPos is None:
-                continue
-            if ori.decPos[0] != obf.decPos[0]:
-                # 过滤掉提取或本身有问题的变量实体
-                if ori.initPos is None or ori.useFPos is None or obf.initPos is None or obf.useFPos is None:
-                    continue
-                # 如果原始代码中声明位置与初始化位置相同
-                if ori.decPos == ori.initPos:
-                    Strategy = f"For this {ori.kind} entity named {ori.entity}, it's initially declared and initialized at the **same** location(line {ori.decPos[1]}: {ori.decPos[0]}): first identify its scope({ori.scope}) and the position of its first use(line {ori.useFPos[1]}: {ori.useFPos[0]}). Then, separate its declaration and initialization into two statements: {obf.decPos[0]} and {obf.initPos[0]}. Randomly place the declaration and initialization **within the entity's original scope**, ensuring both are positioned before the first use(the first use position remains **unchanged and fixed**), and that the initialization **comes after** the declaration. The final ordering must follow: Scope[declaration(random) → initialization(random) → first use(fixed)]."
-                else:
-                    Strategy = f"For this {ori.kind} entity named {ori.entity}, it's initially declared and initialized at **different** locations([line {ori.decPos[1]}: {ori.decPos[0]}] and [line {ori.initPos[1]}: {ori.initPos[0]}]): first identify its scope({ori.scope}) and determine the position of its first use(line {ori.useFPos[1]}: {ori.useFPos[0]}). Then, merge its declaration and initialization into a single statement: {obf.decPos[0]}. Randomly place this merged statement **within the entity's original scope**, ensuring it's positioned **before** the first use(the first use position remains **unchanged and fixed**). The final ordering must follow: Scope[merged dec&init(random) → first use(fixed)]."
-                # 创建diffTag1_2对象
-                diff = diffTag1_2(
-                    entity=f"{ori.entity}",
-                    kind=ori.kind,
-                    type=f"{ori.type}",
-                    modifiers=ori.modifiers,
-                    scope=generate_scope_diff(ori.scope, obf.scope),
-                    decPosDiff=(ori.decPos, obf.decPos),
-                    initPosDiff=(ori.initPos, obf.initPos),
-                    useFPos=ori.useFPos,
-                    strategy=Strategy,
-                )
-                ents.append(ori)
-                diffs.append(diff)
-
-    return ents, diffs
 
 @register("tag1_2_entExt")
 def jsonEnt_tag1_2(entity: renameableEntity, ori_fcode: str) -> Dict[str, Any]:
@@ -120,6 +90,45 @@ def jsonEnt_tag1_2(entity: renameableEntity, ori_fcode: str) -> Dict[str, Any]:
             "DeclInitPos_rearrangable_gaps": varScopeGaps(ori_fcode, entity.entity, entity.decPos[1], entity.useFPos[1]),
         }
     }
+
+@register("tag1_2_entDiff")
+def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tuple[List, List]:
+    key_list = ["entity", "kind", "type", "modifiers", "scope"]
+    matched_entities = get_matched_entities(wparser, ori_fcode, obf_fcode, key_list)
+    
+    ents = []
+    diffs = []
+    for items in matched_entities:
+        for ori, obf in items:
+            if ori.decPos is None or obf.decPos is None:
+                continue
+            if ori.decPos[0] != obf.decPos[0]:
+                # 过滤掉提取或本身有问题的变量实体
+                if ori.initPos is None or ori.useFPos is None or obf.initPos is None or obf.useFPos is None:
+                    continue
+                gaps = varScopeGaps(ori_fcode, ori.entity, ori.decPos[1], ori.useFPos[1])
+                # 如果原始代码中声明位置与初始化位置相同
+                if ori.decPos == ori.initPos:
+                    Strategy = f"For this {ori.kind} entity named {ori.entity}, it's initially declared and initialized at the **same** location(line {ori.decPos[1]}: {ori.decPos[0]}): \nFirst identify its scope({ori.scope}) and the position of its first use(line {ori.useFPos[1]}: {ori.useFPos[0]}). We can obtain **code gaps** for rearranging the declaration and initialization location of the variable:\n{gaps}\nThen, separate its declaration and initialization into two statements: {obf.decPos[0]} and {obf.initPos[0]}. Randomly place the declaration and initialization **within the code gaps**, ensuring the initialization **comes after** the declaration. The final ordering must follow: Code gaps[declaration(random) → initialization(random)] → first use(fixed)."
+                else:
+                    Strategy = f"For this {ori.kind} entity named {ori.entity}, it's initially declared and initialized at **different** locations([line {ori.decPos[1]}: {ori.decPos[0]}] and [line {ori.initPos[1]}: {ori.initPos[0]}]): \nFirst identify its scope({ori.scope}) and determine the position of its first use(line {ori.useFPos[1]}: {ori.useFPos[0]}). We can obtain **code gaps** for rearranging the declaration and initialization location of the variable:\n{gaps}\nThen, merge its declaration and initialization into a single statement: {obf.decPos[0]}. Randomly place this merged statement **within the code gaps**. The final ordering must follow: Code gaps[merged dec&init(random)] → first use(fixed)."
+                # 创建diffTag1_2对象
+                diff = diffTag1_2(
+                    entity=f"{ori.entity}",
+                    kind=ori.kind,
+                    type=f"{ori.type}",
+                    modifiers=ori.modifiers,
+                    scope=generate_scope_diff(ori.scope, obf.scope),
+                    scope_gaps=gaps,
+                    decPosDiff=(ori.decPos, obf.decPos),
+                    initPosDiff=(ori.initPos, obf.initPos),
+                    useFPos=ori.useFPos,
+                    strategy=Strategy,
+                )
+                ents.append(ori)
+                diffs.append(diff)
+
+    return ents, diffs
 
 @register("tag1_2_diffExt")
 def jsonDiff_tag1_2(diff: diffTag1_2) -> Dict[str, Any]:

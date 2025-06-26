@@ -180,37 +180,37 @@ def doc2embedData(obfus_type:ObfusType):
         content = doc.page_content
         metadata = doc.metadata
         lines = []
-        if metadata.get("class_name"):
-            class_name = metadata["class_name"]
         if metadata.get("obfus_level"):
-            lines.append(f"<obfus_level> {metadata['obfus_level']}")
+            lines.append(f"<obfus_level>\n{metadata['obfus_level']}\n</obfus_level>\n")
         if metadata.get("obfus_desc"):
-            lines.append(f"<obfus_desc> {metadata['obfus_desc']}")
-        lines.append(f"<content> {content}\n")
+            lines.append(f"<obfus_desc>\n{metadata['obfus_desc']}\n</obfus_desc>\n")
+        lines.append(f"<content> {content} </content>\n")
         if metadata.get("language"):
-            lines.append(f"<code_language> {metadata['language']}")
+            lines.append(f"<code_language>\n{metadata['language']}\n</code_language>\n")
         if metadata.get("original_code"):
             format_origin = metadata['original_code']
             attach_lineNum_ori = attach_lineNum_func(format_origin)
-            lines.append(f"<original_code>\n{attach_lineNum_ori}\n")
+            lines.append(f"<original_code>\n{attach_lineNum_ori}\n</original_code>\n")
         if metadata.get("extracted_entities"):
             lines.append("<Process> First extract renameable entities from the original code:")
             content = metadata['extracted_entities']
             indented_entities = "\n".join("\t" + line for line in content.splitlines())
             lines.append(f"\t[extracted_entities]\n{indented_entities}\n")
-        if metadata.get("diff"):
-            lines.append(f"<operation>:\nThen do *{metadata['obfus_desc']}*")
-            if metadata.get("constraints"):
-                lines.append(f"[constraints] {metadata['constraints']}")
-            if metadata.get("typical_changes"):
-                lines.append(f"[typical_changes] {metadata['typical_changes']}")
-            if metadata.get("algorithm"):
-                lines.append(f"[algorithm] {metadata['algorithm']}")
-            lines.append(f"[diff]\n{metadata['diff']}\n")
+            lines.append("</Process>\n")
+        lines.append(f"<operation>:\nThen do *{metadata['obfus_desc']}*")
+        if metadata.get("constraints"):
+            lines.append(f"[constraints] {metadata['constraints']}")
+        if metadata.get("typical_changes"):
+            lines.append(f"[typical_changes] {metadata['typical_changes']}")
+        if metadata.get("algorithm"):
+            lines.append(f"[algorithm] {metadata['algorithm']}")
+        lines.append(f"</operation>\n")
         if metadata.get("obfuscated_code"):
             format_obfus = metadata['obfuscated_code']
             attach_lineNum_obfus = attach_lineNum_func(format_obfus)
-            lines.append(f"<obfuscated_code>\n{attach_lineNum_obfus}\n")
+            lines.append(f"<obfuscated_code>\n{attach_lineNum_obfus}\n</obfuscated_code>\n")
+        if metadata.get("diff"):
+            lines.append(f"<diff>\n{metadata['diff']}\n</diff>\n")
 
         
         full_content = "\n".join(lines)
