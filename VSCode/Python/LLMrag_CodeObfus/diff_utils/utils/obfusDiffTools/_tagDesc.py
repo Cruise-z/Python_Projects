@@ -1,5 +1,5 @@
-from .reEnt import *
-from .varPos import *
+from .renameEnt import *
+from .reposVarDecl import *
 from enum import Enum
 
 class ObfusType(Enum):

@@ -3,8 +3,8 @@ import pickle
 import json
 from .obfusDiffTools._tagDesc import ObfusType
 from .obfusDiffTools.funcReg import tagFunc
-from .obfusDiffTools.reEnt import *
-from .obfusDiffTools.varPos import *
+from .obfusDiffTools.renameEnt import *
+from .obfusDiffTools.reposVarDecl import *
 from .format import *
 from tree_sitter import Language, Parser
 from langchain.schema import Document

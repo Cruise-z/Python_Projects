@@ -5,7 +5,9 @@ from ..codeAnalysis.infProcess import *
 
 # !混淆等级1.2: 随机化变量声明位置
 content_tag1_2 = """
-This obfuscation type targets **named local variable declarations** within a function or block scope. For each variable:
+This obfuscation type targets **Named Local Variable Declarations** within a function or block scope. 
+When working with variables, you can declare and initialize them in one go(e.g., `int x = 5;`), or split the process into two steps — first declare, then initialize(`int x;` and `x = 5;`). 
+For each variable:
 - If a declaration and initialization appear in a single statement (e.g., `int x = 5;`), the transformation will split this into two separate statements (`int x;` and `x = 5;`).
 - Both declaration and initialization will then be randomly relocated, as long as:
   1. The declaration appears **before** the initialization.
@@ -15,7 +17,7 @@ This obfuscation type targets **named local variable declarations** within a fun
 The transformation must preserve:
 - Variable names, types, modifiers (e.g., annotations).
 - The control-flow behavior and semantic correctness of the program.
-- The original position of the **first usage**.
+- The original position of the **first initial** and **first usage**.
 
 This form of obfuscation is designed to confuse static analyzers and models by breaking common assumptions about variable lifecycle locality.
 """
@@ -98,7 +100,7 @@ def jsonEnt_tag1_2(entity: renameableEntity, ori_fcode: str) -> Dict[str, Any]:
                     "content": entity.useFPos[0]
                 }
             },
-            "DeclInitPos_rearrangable_gaps": varScopeGaps(ori_fcode, entity.entity, entity.decPos[1], entity.useFPos[1]),
+            "DeclPos_rearrangable_gaps": varScopeGaps(ori_fcode, entity.entity, entity.decPos[1], entity.initPos[1]),
         }
     }
 
