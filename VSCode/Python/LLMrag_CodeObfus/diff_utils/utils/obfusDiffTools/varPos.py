@@ -60,6 +60,17 @@ algorithm_tag1_2 = """
 **FALLBACK: If a variable cannot be legally moved (e.g., used in a lambda, or control-flow-sensitive position), skip its transformation and leave it unchanged.
 """
 
+@register("tag1_2_entFetch")
+def fetchEnt_tag1_2(wparser: WParser, format_origin: str)-> List[renameableEntity]:
+    """
+    Fetches renameable entities from the original code.
+    :param wparser: WParser instance for parsing the code.
+    :param format_origin: The original formatted code.
+    :return: A list of local variable entities.
+    """
+    _, _, ln, _, _, _ = extract_renameable_entities(format_origin, wparser)
+    return ln
+
 @register("tag1_2_entExt")
 def jsonEnt_tag1_2(entity: renameableEntity, ori_fcode: str) -> Dict[str, Any]:
     return {
@@ -96,7 +107,6 @@ def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tup
     key_list = ["entity", "kind", "type", "modifiers", "scope"]
     matched_entities = get_matched_entities(wparser, ori_fcode, obf_fcode, key_list)
     
-    ents = []
     diffs = []
     for items in matched_entities:
         for ori, obf in items:
@@ -125,10 +135,9 @@ def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tup
                     useFPos=ori.useFPos,
                     strategy=Strategy,
                 )
-                ents.append(ori)
                 diffs.append(diff)
 
-    return ents, diffs
+    return diffs
 
 @register("tag1_2_diffExt")
 def jsonDiff_tag1_2(diff: diffTag1_2) -> Dict[str, Any]:

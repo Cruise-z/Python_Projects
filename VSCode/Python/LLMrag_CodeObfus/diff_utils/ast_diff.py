@@ -1,16 +1,21 @@
 from tree_sitter import Language, Parser
 from utils import *
+import sys
 import os
 import json
 from tqdm import tqdm
 
 
 if __name__ == '__main__':
-    struct_doc('java', 
-               "4bit_gru_srcmarker_42_csn_java_tag1_2.jsonl", 
-               ObfusType.tag1_2)
+    # struct_doc('java', 
+    #            "4bit_gru_srcmarker_42_csn_java_tag1_2.jsonl", 
+    #            ObfusType.tag1_2)
     
-    doc2embedData(ObfusType.tag1_2)
+    # doc2embedData(ObfusType.tag1_2)
+    
+    code = sys.stdin.read()
+    content = prompt_gen(code, 'java', ObfusType.tag1_2)
+    print(content)
     
     # code1 = "public boolean blockingAwait(long timeout, TimeUnit unit) {\n        if (getCount() != 0) {\n            try {\n                BlockingHelper.verifyNonBlocking();\n                if (!await(timeout, unit)) {\n                    dispose();\n                    return false;\n                }\n            } catch (InterruptedException ex) {\n                dispose();\n                throw ExceptionHelper.wrapOrThrow(ex);\n            }\n        }\n        Throwable ex = error;\n        if (ex != null) {\n            throw ExceptionHelper.wrapOrThrow(ex);\n        }\n        return true;\n    }"
 

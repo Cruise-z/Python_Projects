@@ -41,41 +41,19 @@ Typical changes include:
 algorithm_tag1_1 = """
 """
 
-@register("tag1_1_entDiff")
-def diffEntities_tag1_1(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tuple[List, List]:
-    key_list = ["kind", "type", "modifiers", "scope"]
-    matched_entities = get_matched_entities(wparser, ori_fcode, obf_fcode, key_list)
-    
-    ents = []
-    diffs = []
-    for items in matched_entities:
-        for ori, obf in items:
-            if ori.entity != obf.entity:
-                Modifiers = list(ori.modifiers)
-                if Modifiers:
-                    Modifiers[-1] += " (unchanged)"
-                else:
-                    Modifiers.append(" (unchanged)")
-                Scope = list(generate_scope_diff(ori.scope, obf.scope))
-                if Scope:
-                    Scope[-1] += " (unchanged)"
-                else:
-                    Scope.append(" (unchanged)")
-                diff = diffTag1_1(
-                    entity=f"{ori.entity} -> {obf.entity}",
-                    kind=f"{ori.kind}",
-                    type=f"{ori.type} (unchanged)",
-                    modifiers=tuple(Modifiers),
-                    scope=Scope,
-                    strategy=f"For this {ori.kind} entity named {ori.entity}, first locate all its appearances within its scope {generate_scope_diff(ori.scope, obf.scope)}, including its definition and all valid references. Then rename it to {obf.entity} and substitute all occurrences consistently in the same scope. This transformation preserves type, modifiers, and semantic behavior."
-                )
-                ents.append(ori)
-                diffs.append(diff)
-
-    return ents, diffs
+@register("tag1_1_entFetch")
+def fetchEnt_tag1_1(wparser: WParser, format_origin: str)-> List[renameableEntity]:
+    """
+    Fetches renameable entities from the original code.
+    :param wparser: WParser instance for parsing the code.
+    :param format_origin: The original formatted code.
+    :return: A list of local variable entities.
+    """
+    fn, pn, ln, cp, fv, lp = extract_renameable_entities(format_origin, wparser)
+    return fn + pn + ln + cp + fv + lp
 
 @register("tag1_1_entExt")
-def jsonEnt_tag1_2(entity: renameableEntity, ori_fcode: str) -> Dict[str, Any]:
+def jsonEnt_tag1_1(entity: renameableEntity, ori_fcode: str) -> Dict[str, Any]:
     return {
         "Entity information": {
             "name": entity.entity,
@@ -103,3 +81,35 @@ def jsonEnt_tag1_2(entity: renameableEntity, ori_fcode: str) -> Dict[str, Any]:
             },
         }
     }
+
+@register("tag1_1_entDiff")
+def diffEntities_tag1_1(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tuple[List, List]:
+    key_list = ["kind", "type", "modifiers", "scope"]
+    matched_entities = get_matched_entities(wparser, ori_fcode, obf_fcode, key_list)
+    
+    diffs = []
+    for items in matched_entities:
+        for ori, obf in items:
+            if ori.entity != obf.entity:
+                Modifiers = list(ori.modifiers)
+                if Modifiers:
+                    Modifiers[-1] += " (unchanged)"
+                else:
+                    Modifiers.append(" (unchanged)")
+                Scope = list(generate_scope_diff(ori.scope, obf.scope))
+                if Scope:
+                    Scope[-1] += " (unchanged)"
+                else:
+                    Scope.append(" (unchanged)")
+                diff = diffTag1_1(
+                    entity=f"{ori.entity} -> {obf.entity}",
+                    kind=f"{ori.kind}",
+                    type=f"{ori.type} (unchanged)",
+                    modifiers=tuple(Modifiers),
+                    scope=Scope,
+                    strategy=f"For this {ori.kind} entity named {ori.entity}, first locate all its appearances within its scope {generate_scope_diff(ori.scope, obf.scope)}, including its definition and all valid references. Then rename it to {obf.entity} and substitute all occurrences consistently in the same scope. This transformation preserves type, modifiers, and semantic behavior."
+                )
+                diffs.append(diff)
+
+    return diffs
+

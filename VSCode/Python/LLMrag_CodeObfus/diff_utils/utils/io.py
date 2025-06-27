@@ -114,7 +114,8 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
         
         fEnts = []
         fDiffs = []
-        ents, diffs = tagFunc(f"{obfus_type.name}_entDiff", wparser, format_origin, format_obfus)
+        ents = tagFunc(f"{obfus_type.name}_entFetch", wparser, format_origin)
+        diffs = tagFunc(f"{obfus_type.name}_entDiff", wparser, format_origin, format_obfus)
         for ent in ents:
             fEnt = tagFunc(f"{obfus_type.name}_entExt", ent, format_origin)
             fEnt = json.dumps(fEnt, indent=2, ensure_ascii=False)
@@ -218,3 +219,54 @@ def doc2embedData(obfus_type:ObfusType):
         file_name = f"{obfus_type.name}_{i:0{width}}.txt"
         with open(os.path.join(dest_dir, file_name), "w", encoding="utf-8") as f:
             f.write(full_content)
+            
+def prompt_gen(code: str, lang: str, obfus_type: ObfusType) -> str:
+    # 加载 parser
+    wparser = WParser(lang)
+    fEnts = []
+    try:
+        fcode = format_func('test', code, lang)
+        ents = tagFunc(f"{obfus_type.name}_entFetch", wparser, fcode)
+        for ent in ents:
+            fEnt = tagFunc(f"{obfus_type.name}_entExt", ent, fcode)
+            fEnt = json.dumps(fEnt, indent=2, ensure_ascii=False)
+            fEnts.append(fEnt)
+        fcode = attach_lineNum_func(fcode)
+    except RuntimeError as e:
+        raise RuntimeError(f"Error formatting code: {e}")
+    
+    item = {
+        # "repo": json_data["repo"],
+        # "path": json_data["path"],
+        # "func_name": json_data["func_name"],
+        # "class_name": class_name,
+        "language": lang,
+        # "docstring": json_data["docstring"],
+        # "url": json_data["url"],
+        "obfus_level": obfus_type.name,
+        "obfus_desc": obfus_type.desc,
+        "constraints": obfus_type.constraints,
+        "typical_changes": obfus_type.typical_changes,
+        "algorithm": obfus_type.algorithm,
+        "extracted_entities": "\n".join(fEnt for fEnt in fEnts),
+        "original_code": fcode,
+    }
+    lines = []
+    lines.append(f"<obfus_level>\n{item['obfus_level']}\n</obfus_level>\n")
+    lines.append(f"<obfus_desc>\n{item['obfus_desc']}\n</obfus_desc>\n")
+    lines.append(f"<content> {obfus_type.content} </content>\n")
+    lines.append(f"<code_language>\n{item['language']}\n</code_language>\n")
+    lines.append(f"<original_code>\n{fcode}\n</original_code>\n")
+    lines.append("<Process> First extract usable entities from the original code:")
+    indented_entities = "\n".join("\t" + line for line in item['extracted_entities'].splitlines())
+    lines.append(f"\t[extracted_entities]\n{indented_entities}\n")
+    lines.append("</Process>\n")
+    lines.append(f"<operation>:\nThen do *{item['obfus_desc']}*")
+    lines.append(f"[constraints] {item['constraints']}")
+    lines.append(f"[typical_changes] {item['typical_changes']}")
+    lines.append(f"[algorithm] {item['algorithm']}")
+    lines.append(f"</operation>\n")
+    lines.append(f"**Please provide the obfuscated code according to the obfuscation method described above.**")
+    lines.append(f"<obfuscated_code>\n</obfuscated_code>\n")
+    full_content = "\n".join(lines)
+    return full_content
