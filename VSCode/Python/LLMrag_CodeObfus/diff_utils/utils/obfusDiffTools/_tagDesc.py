@@ -14,7 +14,7 @@ class ObfusType(Enum):
     
     tag1_2 = {
         "id": "1-2",
-        "desc": "Randomized repositioning of variable declarations and initializations strictly within their lexical scope. For each variable, the declaration must appear before its initialization, and both must precede the variable's first use in the control flow. This process preserves semantic correctness while disrupting variable lifecycle locality.", 
+        "desc": "Randomized repositioning of variable declarations strictly within their lexical scope. For each variable, the declaration must appear before its initialization in the control flow. This process preserves semantic correctness while disrupting variable lifecycle locality.", 
         "content": content_tag1_2,
         "constraints": constraints_tag1_2,
         "typical_changes": typical_changes_tag1_2,
