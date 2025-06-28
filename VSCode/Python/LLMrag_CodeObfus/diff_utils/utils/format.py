@@ -3,6 +3,7 @@ from enum import Enum
 from dataclasses import dataclass, fields, is_dataclass
 from typing import List, Optional, Tuple, Any
 from difflib import SequenceMatcher
+from math import tanh
 import subprocess
 import textwrap
 import re
@@ -160,22 +161,82 @@ def format_func(class_name:str, codefunc:str, lang:str) -> str:
     return format_func
 
 # 1. Normalize lines (with literal abstraction)
-def normalize_code_line_literal_aware(line: str) -> str:
+def semantically_normalize_line(line: str) -> str:
     """
-    Normalize code line by:
-    - Removing all whitespace characters
-    - Removing trailing semicolons
-    - Converting to lowercase
+    Normalize a code line while preserving code structure:
+    - Remove spaces inside string literals (e.g., "error msg" → "errormsg")
+    - Preserve structural whitespace in code
+    - Lowercase and strip trailing semicolons
     """
-    line = re.sub(r'\s+', '', line)         # 移除所有空白字符
-    line = re.sub(r';+$', '', line)         # 去除末尾分号（包括多个 ;;）
-    line = line.lower()                     # 全部转为小写
-    return line
+    def extract_and_mask_literals(line: str):
+        string_literals = {}
+        pattern = r'(["\'])(.*?)(\1)'  # Match "..." or '...'
+        idx = 0
+
+        def replacer(match):
+            nonlocal idx
+            full_match = match.group(0)
+            key = f"__STR{idx}__"
+            string_literals[key] = full_match
+            idx += 1
+            return key
+
+        masked_line = re.sub(pattern, replacer, line)
+        return masked_line, string_literals
+
+    def restore_literals(masked_line: str, string_literals: dict):
+        for key, value in string_literals.items():
+            cleaned = value[0] + value[1:-1].replace(' ', '') + value[-1]  # remove inner spaces
+            masked_line = masked_line.replace(key, cleaned)
+        return masked_line
+
+    line = line.strip()
+    masked_line, str_map = extract_and_mask_literals(line)
+    masked_line = re.sub(r'\s+', ' ', masked_line)        # Collapse spaces
+    masked_line = re.sub(r';+\s*$', '', masked_line)      # Remove trailing semicolons
+    masked_line = masked_line.lower()
+    normalized_line = restore_literals(masked_line, str_map)
+    return normalized_line
 
 # 2. Reverse token similarity with normalization
+def extract_assignment_parts(line: str) -> Optional[Tuple[str, str]]:
+    """
+    Try to split a line into (lhs, rhs) if it's an assignment statement.
+    Only works for simple single '=' assignments.
+    """
+    if '=' not in line:
+        return None
+    parts = line.split('=', 1)
+    lhs = parts[0].strip()
+    rhs = parts[1].strip()
+    return lhs, rhs
+
 def reversed_suffix_similarity(line1: str, line2: str) -> float:
-    s1 = normalize_code_line_literal_aware(line1)
-    s2 = normalize_code_line_literal_aware(line2)
+    """
+    Assignment-sensitive similarity function:
+    - Boosts score when both lines are equivalent assignments (with or without type)
+    - Falls back to reversed suffix similarity
+    - Long matches rewarded more heavily with tanh scaling
+    """
+    s1 = semantically_normalize_line(line1)
+    s2 = semantically_normalize_line(line2)
+
+    # First try to extract assignment (var = value) parts
+    assign1 = extract_assignment_parts(s1)
+    assign2 = extract_assignment_parts(s2)
+
+    # Strong match: identical assignment (var and value match)
+    if assign1 and assign2 and assign1 == assign2:
+        return 1.2
+
+    # Partial match: same RHS, variable name matches with type prefix allowed
+    if assign1 and assign2:
+        lhs1, rhs1 = assign1
+        lhs2, rhs2 = assign2
+        if rhs1 == rhs2 and lhs1.endswith(lhs2):
+            return 1.1
+
+    # === Fallback: reversed suffix match ===
     rev1 = s1[::-1]
     rev2 = s2[::-1]
 
@@ -185,13 +246,14 @@ def reversed_suffix_similarity(line1: str, line2: str) -> float:
             match_len += 1
         else:
             break
+
     if match_len == 0:
         return 0.0
-    # 使用乘积相似度的奖励机制：
-    # 1. 两字符串完全相等-> 得分=1
-    # 2. 两字符串其中一个为另一个的子串-> 得分=两串长度之比<1
-    # 3. 两字符串均为部分匹配-> 得分<两串长度之比
-    return (match_len / max(len(s1), 1)) * (match_len / max(len(s2), 1))
+
+    base_score = (match_len / max(len(s1), 1)) * (match_len / max(len(s2), 1))
+    length_boost = tanh(match_len / 10)
+
+    return base_score * length_boost
 
 # 3. 动态规划全局对齐（Needleman-Wunsch）
 def dp_align(A: List[str], B: List[str], gap_cost=0.3) -> Tuple[List[str], List[str]]:
