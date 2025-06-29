@@ -57,8 +57,13 @@ algorithm_tag1_2 = """
         - if the `declaration` and `initialization` are merged:
             - The merged declaration and initialization must be positioned at the original initialization location.
 	Ensure initialization line is **untouched** and still receives the previous value!
+3. Only relocate declaration lines. Keep all other code intact.
 **FALLBACK: If a variable cannot be legally transformed (e.g., used in a lambda, or control-flow-sensitive position), skip its transformation and leave it unchanged.
 """
+
+fallback_rule_tag1_2 = [
+    f"If a variable cannot be legally transformed (e.g., used in a lambda, or control-flow-sensitive position), skip its transformation and leave it unchanged.",
+]
 
 @register("tag1_2_entFetch")
 def fetchEnt_tag1_2(wparser: WParser, format_origin: str)-> List[renameableEntity]:

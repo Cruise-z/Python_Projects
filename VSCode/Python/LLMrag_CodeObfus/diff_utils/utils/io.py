@@ -118,11 +118,9 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
         diffs = tagFunc(f"{obfus_type.name}_entDiff", wparser, format_origin, format_obfus)
         for ent in ents:
             fEnt = tagFunc(f"{obfus_type.name}_entExt", ent, format_origin)
-            fEnt = json.dumps(fEnt, indent=2, ensure_ascii=False)
             fEnts.append(fEnt)
         for diff in diffs:
             fDiff = tagFunc(f"{obfus_type.name}_diffExt", diff)
-            fDiff = json.dumps(fDiff, indent=2, ensure_ascii=False)
             fDiffs.append(fDiff)
         
         if not diffs:
@@ -141,10 +139,10 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
             "constraints": obfus_type.constraints,
             "typical_changes": obfus_type.typical_changes,
             "algorithm": obfus_type.algorithm,
-            "extracted_entities": "\n".join(fEnt for fEnt in fEnts),
+            "extracted_entities": fEnts,
             "original_code": format_origin,
             "obfuscated_code": format_obfus,
-            "diff": "\n".join(fDiff for fDiff in fDiffs),
+            "diff": fDiffs,
         }
         
         doc = Document(
@@ -180,45 +178,77 @@ def doc2embedData(obfus_type:ObfusType):
                        unit="file"):
         content = doc.page_content
         metadata = doc.metadata
-        lines = []
-        if metadata.get("obfus_level"):
-            lines.append(f"<obfus_level>\n{metadata['obfus_level']}\n</obfus_level>\n")
-        if metadata.get("obfus_desc"):
-            lines.append(f"<obfus_desc>\n{metadata['obfus_desc']}\n</obfus_desc>\n")
-        lines.append(f"<content> {content} </content>\n")
-        if metadata.get("language"):
-            lines.append(f"<code_language>\n{metadata['language']}\n</code_language>\n")
-        if metadata.get("original_code"):
-            format_origin = metadata['original_code']
-            attach_lineNum_ori = attach_lineNum_func(format_origin)
-            lines.append(f"<original_code>\n{attach_lineNum_ori}\n</original_code>\n")
-        if metadata.get("extracted_entities"):
-            lines.append("<Process> First extract usable entities from the original code:")
-            content = metadata['extracted_entities']
-            indented_entities = "\n".join("\t" + line for line in content.splitlines())
-            lines.append(f"\t[extracted_entities]\n{indented_entities}\n")
-            lines.append("</Process>\n")
-        lines.append(f"<operation>:\nThen do *{metadata['obfus_desc']}*")
-        if metadata.get("constraints"):
-            lines.append(f"[constraints] {metadata['constraints']}")
-        if metadata.get("typical_changes"):
-            lines.append(f"[typical_changes] {metadata['typical_changes']}")
-        if metadata.get("algorithm"):
-            lines.append(f"[algorithm] {metadata['algorithm']}")
-        lines.append(f"</operation>\n")
-        if metadata.get("obfuscated_code"):
-            format_obfus = metadata['obfuscated_code']
-            attach_lineNum_obfus = attach_lineNum_func(format_obfus)
-            lines.append(f"<obfuscated_code>\n{attach_lineNum_obfus}\n</obfuscated_code>\n")
-        if metadata.get("diff"):
-            lines.append(f"<diff>\n{metadata['diff']}\n</diff>\n")
+        item = {
+            "obfuscation_strategy": {
+                "id": obfus_type.name,
+                "name": obfus_type.id,
+                "description": obfus_type.desc,
+                "content": content,
+                "constraints": obfus_type.constraints, 
+                "typical_changes": obfus_type.typical_changes,
+                "algorithm": obfus_type.algorithm, 
+                "fallback_rule": obfus_type.fallback,
+            },
+            "input_example":{
+                "original_code": metadata['original_code'].splitlines(),
+                "extracted_entities": metadata['extracted_entities'],
+            },
+            "transformation_example":{
+                "obfuscated_code": metadata['obfuscated_code'].splitlines(),
+                "diff": metadata['diff'],
+            },
+            "prompt_spec":{
+                "role": "You are a code transformation engine.",
+                "task_instruction": f"Apply {obfus_type.name} obfuscation based on the configuration and extracted entities.",
+                "input_format": "Input will be JSON including 'original_code' and 'extracted_entities'.",
+                "output_format": {
+                    "language": f"{metadata['language']}",
+                    "style": f"Return only transformed {metadata['language']} code inside a ```{metadata['language']} code block. No explanation or commentary.",
+                    "strict": True,
+                }
+            },
+        }
+        formatted = json.dumps(item, indent=4, ensure_ascii=False)
+        
+        # lines = []
+        # if metadata.get("obfus_level"):
+        #     lines.append(f"<obfus_level>\n{metadata['obfus_level']}\n</obfus_level>\n")
+        # if metadata.get("obfus_desc"):
+        #     lines.append(f"<obfus_desc>\n{metadata['obfus_desc']}\n</obfus_desc>\n")
+        # lines.append(f"<content> {content} </content>\n")
+        # if metadata.get("language"):
+        #     lines.append(f"<code_language>\n{metadata['language']}\n</code_language>\n")
+        # if metadata.get("original_code"):
+        #     format_origin = metadata['original_code']
+        #     attach_lineNum_ori = attach_lineNum_func(format_origin)
+        #     lines.append(f"<original_code>\n{attach_lineNum_ori}\n</original_code>\n")
+        # if metadata.get("extracted_entities"):
+        #     lines.append("<Process> First extract usable entities from the original code:")
+        #     content = metadata['extracted_entities']
+        #     indented_entities = "\n".join("\t" + line for line in content.splitlines())
+        #     lines.append(f"\t[extracted_entities]\n{indented_entities}\n")
+        #     lines.append("</Process>\n")
+        # lines.append(f"<operation>:\nThen do *{metadata['obfus_desc']}*")
+        # if metadata.get("constraints"):
+        #     lines.append(f"[constraints] {metadata['constraints']}")
+        # if metadata.get("typical_changes"):
+        #     lines.append(f"[typical_changes] {metadata['typical_changes']}")
+        # if metadata.get("algorithm"):
+        #     lines.append(f"[algorithm] {metadata['algorithm']}")
+        # lines.append(f"</operation>\n")
+        # if metadata.get("obfuscated_code"):
+        #     format_obfus = metadata['obfuscated_code']
+        #     attach_lineNum_obfus = attach_lineNum_func(format_obfus)
+        #     lines.append(f"<obfuscated_code>\n{attach_lineNum_obfus}\n</obfuscated_code>\n")
+        # if metadata.get("diff"):
+        #     lines.append(f"<diff>\n{metadata['diff']}\n</diff>\n")
 
         
-        full_content = "\n".join(lines)
+        # full_content = "\n".join(lines)
         
         file_name = f"{obfus_type.name}_{i:0{width}}.txt"
         with open(os.path.join(dest_dir, file_name), "w", encoding="utf-8") as f:
-            f.write(full_content)
+            f.write(formatted)
             
 def prompt_gen(code: str, lang: str, obfus_type: ObfusType) -> str:
     # 加载 parser
@@ -229,44 +259,39 @@ def prompt_gen(code: str, lang: str, obfus_type: ObfusType) -> str:
         ents = tagFunc(f"{obfus_type.name}_entFetch", wparser, fcode)
         for ent in ents:
             fEnt = tagFunc(f"{obfus_type.name}_entExt", ent, fcode)
-            fEnt = json.dumps(fEnt, indent=2, ensure_ascii=False)
             fEnts.append(fEnt)
-        fcode = attach_lineNum_func(fcode)
     except RuntimeError as e:
         raise RuntimeError(f"Error formatting code: {e}")
     
     item = {
-        # "repo": json_data["repo"],
-        # "path": json_data["path"],
-        # "func_name": json_data["func_name"],
-        # "class_name": class_name,
-        "language": lang,
-        # "docstring": json_data["docstring"],
-        # "url": json_data["url"],
-        "obfus_level": obfus_type.name,
-        "obfus_desc": obfus_type.desc,
-        "constraints": obfus_type.constraints,
-        "typical_changes": obfus_type.typical_changes,
-        "algorithm": obfus_type.algorithm,
-        "extracted_entities": "\n".join(fEnt for fEnt in fEnts),
-        "original_code": fcode,
+        "obfuscation_level": obfus_type.name,
+        "obfuscation_type": obfus_type.id,
+        "code_language": lang,
+        "original_code": fcode.splitlines(),
+        "extracted_entities": fEnts,
     }
-    lines = []
-    lines.append(f"<obfus_level>\n{item['obfus_level']}\n</obfus_level>\n")
-    lines.append(f"<obfus_desc>\n{item['obfus_desc']}\n</obfus_desc>\n")
-    lines.append(f"<content> {obfus_type.content} </content>\n")
-    lines.append(f"<code_language>\n{item['language']}\n</code_language>\n")
-    lines.append(f"<original_code>\n{fcode}\n</original_code>\n")
-    lines.append("<Process> First extract usable entities from the original code:")
-    indented_entities = "\n".join("\t" + line for line in item['extracted_entities'].splitlines())
-    lines.append(f"\t[extracted_entities]\n{indented_entities}\n")
-    lines.append("</Process>\n")
-    lines.append(f"<operation>:\nThen do *{item['obfus_desc']}*")
-    lines.append(f"[constraints] {item['constraints']}")
-    lines.append(f"[typical_changes] {item['typical_changes']}")
-    lines.append(f"[algorithm] {item['algorithm']}")
-    lines.append(f"</operation>\n")
-    lines.append(f"**Please provide the obfuscated code according to the obfuscation method described above.**")
-    lines.append(f"<obfuscated_code>\n</obfuscated_code>\n")
-    full_content = "\n".join(lines)
-    return full_content
+    formatted = json.dumps(item, indent=4, ensure_ascii=False)
+    
+    prompt = [
+        f"You are a code transformation engine. Your task is to apply {obfus_type.name}:{obfus_type.id} obfuscation based on the structured configuration.",
+        f"",
+        f"### Task Description",
+        f"You are given {lang} code along with related transformation metadata.",
+        f"#### Description:",
+        f"{obfus_type.desc}",
+        f"#### Constraints:",
+        f"{obfus_type.constraints}",
+        f"#### Typical Changes:",
+        f"{obfus_type.typical_changes}",
+        f"#### Algorithm:",
+        f"{obfus_type.algorithm}",
+        f"",
+        f"---",
+        f"### Input JSON:",
+        f"{formatted}",
+        f"---",
+        f"### Output format:",
+        f"Return only the **obfuscated {lang} code**, line by line (as a code block). Do not explain anything.",
+    ]
+    
+    return "\n".join(prompt)

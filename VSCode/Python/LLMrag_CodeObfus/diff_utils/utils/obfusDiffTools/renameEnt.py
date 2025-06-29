@@ -41,6 +41,10 @@ Typical changes include:
 algorithm_tag1_1 = """
 """
 
+fallback_rule_tag1_1 = [
+    "If a variable cannot be legally transformed (e.g., used in a lambda, or control-flow-sensitive position), skip its transformation and leave it unchanged."
+]
+
 @register("tag1_1_entFetch")
 def fetchEnt_tag1_1(wparser: WParser, format_origin: str)-> List[renameableEntity]:
     """
