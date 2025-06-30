@@ -7,6 +7,7 @@ from math import tanh
 import subprocess
 import textwrap
 import re
+import os
 
 def highlight_print(text, fg='white', bg=None, bold=True):
     color_codes = {
@@ -28,30 +29,6 @@ def highlight_print(text, fg='white', bg=None, bold=True):
     parts.append('\033[0m\n')
 
     print(''.join(parts))
-
-
-def format_func_deprecated(class_name:str, codefunc:str, lang:str) -> str:
-    """
-    使用 google-java-format 对 Java 源码进行格式化。
-    """
-    Wrapped_func = f"public class {class_name} {{\n{codefunc}\n}}"
-    if lang == 'java':
-        jar_path = "build/CodeFormat_adapter/google-java-format-1.27.0-all-deps.jar"
-        process = subprocess.Popen(
-            ["java", "-jar", jar_path, "--aosp", "-"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        stdout, stderr = process.communicate(Wrapped_func)
-        if process.returncode != 0:
-            raise RuntimeError(f"格式化失败: {stderr}")
-    
-    format_func = stdout
-    # match = re.search(r"public class Example \{\n(.*)\n\}", stdout, re.DOTALL)
-    # format_func = textwrap.dedent(match.group(1))
-    return format_func
 
 def preprocess_code(code: str) -> str:
     """
@@ -119,6 +96,46 @@ def valid_check(codefunc: str, lang: str) -> bool:
         return False
 
 def format_func(class_name:str, codefunc:str, lang:str) -> str:
+    """
+    使用 google-java-format 对 Java 源码进行格式化。
+    """
+    toolpath = "build/CodeFormat_adapter"
+    codefunc = preprocess_code(codefunc)  # 预处理代码，移除注释和多余空格
+    if lang == 'java':
+        Wrapped_func = f"public class {class_name} {{\n{codefunc}\n}}"
+        testjar_path = os.path.join(toolpath, "google-java-format-1.27.0-all-deps.jar")
+        process = subprocess.Popen(
+            ["java", "-jar", testjar_path, "--aosp", "-"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        fcode, stderr = process.communicate(Wrapped_func)
+        if process.returncode != 0:
+            raise RuntimeError(f"预处理失败: {stderr.strip()}")
+        class_name = "RestoreJavaFormat"
+        jar_path = f"{toolpath}:{toolpath}/javaparser-core-3.25.4.jar"
+        process = subprocess.Popen(
+            ["java", "-cp", jar_path, class_name],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        fcode, stderr = process.communicate(input=fcode)
+        if process.returncode != 0:
+            raise RuntimeError(f"格式化失败：{stderr.strip()}")
+        lines = fcode.splitlines()
+        non_blank_lines = [line for line in lines if line.strip() != ""]
+        fcode = "\n".join(non_blank_lines)
+    else:
+        fcode = Wrapped_func
+    
+    format_func = fcode
+    return format_func
+
+def format_func_deprecated(class_name:str, codefunc:str, lang:str) -> str:
     """
     使用 Eclipse-java-format 对 Java 源码进行自定义格式化。
     依赖外部 Eclipse 安装和 formatter 配置。
