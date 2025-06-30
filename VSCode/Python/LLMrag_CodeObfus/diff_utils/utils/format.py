@@ -97,7 +97,9 @@ def valid_check(codefunc: str, lang: str) -> bool:
 
 def format_func(class_name:str, codefunc:str, lang:str) -> str:
     """
-    使用 google-java-format 对 Java 源码进行格式化。
+    1. 使用 google-java-format 对 Java 源码进行格式化测试；
+    2. 使用 javaparser-core-3.25.4.jar 对 Java 源码进行自定义格式化；
+    3. 需编写 RestoreJavaFormat.java 来规定格式化样式
     """
     toolpath = "build/CodeFormat_adapter"
     codefunc = preprocess_code(codefunc)  # 预处理代码，移除注释和多余空格
