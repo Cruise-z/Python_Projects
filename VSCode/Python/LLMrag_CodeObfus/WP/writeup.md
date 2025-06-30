@@ -542,7 +542,8 @@ Please provide the obfuscated code according to the obfuscation method described
 
 ```java
 public static double calculateDiscountedPrice(double originalPrice, int customerLevel) {
-    double discountRate = 0.0;
+    double discountRate;
+    discountRate = 0.0;
 
     if (customerLevel == 1) {
         discountRate = 0.1;  

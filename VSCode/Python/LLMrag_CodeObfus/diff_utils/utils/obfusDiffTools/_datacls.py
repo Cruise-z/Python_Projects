@@ -30,4 +30,4 @@ class diffTag1_2:
     initPosDiff: Tuple[Optional[Tuple[str, int]], Optional[Tuple[str, int]]] 
     # 原始及混淆首次使用位置，([声明语句, 行号], [声明语句, 行号])
     useFPos: Optional[Tuple[str, int]]
-    strategy: str               # 位置随机化策略，默认为 "rename"
+    strategy: tuple[list[dict], str]             # 位置随机化策略

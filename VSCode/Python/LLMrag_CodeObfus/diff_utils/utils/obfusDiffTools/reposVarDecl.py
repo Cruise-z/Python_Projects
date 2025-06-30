@@ -2,6 +2,7 @@ from ._datacls import *
 from .funcReg import register
 from ..codeAnalysis.ast2inf import *
 from ..codeAnalysis.infProcess import *
+from ..format import *
 
 # !混淆等级1.2: 随机化变量声明位置
 content_tag1_2 = """
@@ -83,11 +84,7 @@ def jsonEnt_tag1_2(entity: renameableEntity, ori_fcode: str) -> Dict[str, Any]:
             "kind": entity.kind,
             "type": entity.type,
             "modifiers": entity.modifiers,
-            "scope": {
-                "class": entity.scope[0] if len(entity.scope) > 0 else None,
-                "method": entity.scope[1] if len(entity.scope) > 1 else None,
-                "block": ' -> '.join(entity.scope[2:]) if len(entity.scope) > 2 else "Not in block",
-            },
+            "scope": entity.scope,
             "usage_context": {
                 "declaration": {
                     "line": entity.decPos[1],
@@ -97,10 +94,51 @@ def jsonEnt_tag1_2(entity: renameableEntity, ori_fcode: str) -> Dict[str, Any]:
                     "line": entity.initPos[1],
                     "content": entity.initPos[0]
                 },
+                "first_use(as rvalue)": {
+                    "line": entity.useFPos[1],
+                    "content": entity.useFPos[0]
+                },
             },
-            "DeclPos_rearrangable_gaps": varScopeGaps(ori_fcode, entity.entity, entity.decPos[1], entity.initPos[1]),
+            "DeclPos_rearrangable_gaps": {
+                "description": [
+                    "Following are the code gaps where the declaration of this variable can be rearranged.",
+                    "These gaps are determined by the analysis tool, which ensures that variable declarations are certainly before initialization and first use.",
+                    "You can rearrange the declaration of this variable to any position within these gaps.",
+                ],
+                "gaps": varScopeGaps(ori_fcode, entity.entity, entity.decPos[1], entity.initPos[1]),
+            }
         }
     }
+
+def get_insert_index(ori_code: str, obf_code: str, obf_decPos: int,
+                     align_CodeBlocks) -> tuple[int, int]:
+    obf_lines = obf_code.splitlines()
+    # 对齐两段代码
+    aligned_ori, aligned_obf = align_CodeBlocks(ori_code, obf_code)
+    aligned_ori_lines = aligned_ori.splitlines()
+    aligned_obf_lines = aligned_obf.splitlines()
+    for idx, line in enumerate(aligned_obf_lines):
+        if line.strip() == obf_lines[obf_decPos-1].strip():
+            aligned_idx = idx
+            break
+    # 如果 aligned_pos 位置的行不是空行，说明是将声明合并到了初始化行
+    if aligned_ori_lines[aligned_idx].strip() != '':
+        ref_line = aligned_ori_lines[aligned_idx].strip()
+        for j, line in enumerate(ori_code.splitlines()):
+            if line.strip() == ref_line:
+                return (j+1, j+1)
+    # 向上查找 aligned_pos 之前在 ori_code 中存在的最近行
+    for i in range(aligned_idx-1, -1, -1):
+        if aligned_ori_lines[i].strip() != '':
+            # 找到它在原始代码中的位置索引 j，则插入发生在第j+1行与j+2行之间
+            ref_line = aligned_ori_lines[i].strip()
+            for j, line in enumerate(ori_code.splitlines()):
+                if line.strip() == ref_line:
+                    return (j+1, j+2)
+            break
+
+    # 如果前面都为空行，说明是在最顶部插入的
+    return (0, 1)
 
 @register("tag1_2_entDiff")
 def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tuple[List, List]:
@@ -116,12 +154,36 @@ def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tup
                 # 过滤掉提取或本身有问题的变量实体
                 if ori.initPos is None or ori.useFPos is None or obf.initPos is None or obf.useFPos is None:
                     continue
+                ori_lines = ori_fcode.splitlines()
                 gaps = varScopeGaps(ori_fcode, ori.entity, ori.decPos[1], ori.useFPos[1])
+                (a, b) = get_insert_index(ori_fcode, obf_fcode, obf.decPos[1], align_CodeBlocks=align_CodeBlocks)
+                if a == b:
+                    gap = {
+                        "init_line": a,
+                        "content": ori_lines[a-1],
+                        "description": [
+                            f"You can merge declaration to initialization line:",
+                            f"{ori_lines[a-1]}",
+                        ],
+                    }
+                else:
+                    gap = {
+                        "start_line": a,
+                        "start_content": ori_lines[a-1],
+                        "end_line": b,
+                        "end_content": ori_lines[b-1],
+                        "description": [
+                            f"You can insert declaration between",
+                            f"{ori_lines[a-1]}",
+                            f"and",
+                            f"{ori_lines[b-1]}",
+                        ],
+                    }
                 # 如果原始代码中声明位置与初始化位置相同
                 if ori.decPos == ori.initPos:
-                    Strategy = f"For this {ori.kind} entity named {ori.entity}, it's initially declared and initialized at the **same** location(line {ori.decPos[1]}: {ori.decPos[0]}): \nFirst identify its scope({ori.scope}). We can obtain **code gaps** for rearranging the declaration location of the variable:\n{gaps}\nThen, separate its declaration and initialization into two statements: {obf.decPos[0]} and {obf.initPos[0]}. Randomly place the declaration **within the code gaps**, ensuring that **the declaration comes before the initialization**."
+                    Strategy = f"For this {ori.kind} entity named {ori.entity}, it's initially declared and initialized at the **same** location(line {ori.decPos[1]}: {ori.decPos[0]}): \nFirst, separate its declaration from this statement: {obf.decPos[0]} and {obf.initPos[0]}; Then randomly choose this gap from `DeclPos_rearrangable_gaps` to insert the declaration. Initialization position remains unchanged."
                 else:
-                    Strategy = f"For this {ori.kind} entity named {ori.entity}, it's initially declared and initialized at **different** locations([line {ori.decPos[1]}: {ori.decPos[0]}] and [line {ori.initPos[1]}: {ori.initPos[0]}]): \nFirst identify its scope({ori.scope}). We can obtain **code gaps** for rearranging the declaration location of the variable:\n{gaps}\nThen, Randomly place the declaration into another location and **within the code gaps**, ensuring that **the declaration comes before the initialization**. If you rearrange the declaration at the initialization line, you can merge its declaration and initialization into a single statement. The declaration finally rearranged at [line {obf.decPos[1]}: {obf.decPos[0]}]."
+                    Strategy = f"For this {ori.kind} entity named {ori.entity}, it's initially declared and initialized at **different** locations([line {ori.decPos[1]}: {ori.decPos[0]}] and [line {ori.initPos[1]}: {ori.initPos[0]}]): \nFirst, randomly choose this gap from `DeclPos_rearrangable_gaps` to rearrange the declaration. Initialization position remains unchanged. If you rearrange the declaration at the initialization line, merge its declaration and initialization into a single statement."
                 # 创建diffTag1_2对象
                 diff = diffTag1_2(
                     entity=f"{ori.entity}",
@@ -132,8 +194,8 @@ def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tup
                     scope_gaps=gaps,
                     decPosDiff=(ori.decPos, obf.decPos),
                     initPosDiff=(ori.initPos, obf.initPos),
-                    useFPos=ori.useFPos,
-                    strategy=Strategy,
+                    useFPos=(ori.useFPos, obf.useFPos),
+                    strategy=(gap, Strategy),
                 )
                 diffs.append(diff)
 
@@ -141,30 +203,13 @@ def diffEntities_tag1_2(wparser: WParser, ori_fcode: str, obf_fcode: str) -> Tup
 
 @register("tag1_2_diffExt")
 def jsonDiff_tag1_2(diff: diffTag1_2) -> Dict[str, Any]:
-    Modifiers = list(diff.modifiers)
-    if Modifiers:
-        Modifiers[-1] += " (unchanged)"
-    else:
-        Modifiers.append(" (unchanged)")
-    Scope = list(diff.scope)
-    if Scope:
-        Scope[-1] += " (unchanged)"
-    else:
-        Scope.append(" (unchanged)")
-    UseFpos = (
-        (diff.useFPos[0] + " (unchanged)", diff.useFPos[1])
-        if diff.useFPos is not None else None)
     return {
         "Diff information": {
-            "name": f"{diff.entity} (unchanged)",
-            "kind": f"{diff.kind} (unchanged)",
-            "type": f"{diff.type} (unchanged)",
-            "modifiers": Modifiers,
-            "scope": {
-                "class": Scope[0] if len(Scope) > 0 else None,
-                "method": Scope[1] if len(Scope) > 1 else None,
-                "block": ' -> '.join(Scope[2:]) if len(Scope) > 2 else "Not in block",
-            },
+            "name": f"{diff.entity}",
+            "kind": f"{diff.kind}",
+            "type": f"{diff.type}",
+            "modifiers": diff.modifiers,
+            "scope": diff.scope,
             "declaration_position_diff": {
                 "original": {
                     "line": diff.decPosDiff[0][1],
@@ -176,10 +221,16 @@ def jsonDiff_tag1_2(diff: diffTag1_2) -> Dict[str, Any]:
                 }
             },
             "initialization_position": {
-                "line": f"{diff.initPosDiff[0][1]} (unchanged)",
                 "content_original": diff.initPosDiff[0][0],
-                "content_obfuscated": f"{diff.initPosDiff[1][0]} (unchanged)",
+                "content_obfuscated": f"{diff.initPosDiff[1][0]}",
             },
-            "strategy": diff.strategy,
+            "first_use_position": {
+                "content_original": diff.useFPos[0][0],
+                "content_obfuscated": diff.useFPos[1][0],
+            },
+            "strategy": {
+                "choose_gap": diff.strategy[0],
+                "description": diff.strategy[1],
+            },
         }
     }

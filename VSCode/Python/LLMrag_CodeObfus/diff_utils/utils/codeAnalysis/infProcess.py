@@ -123,7 +123,7 @@ def generate_scope_diff(ori_scope:List[str], obf_scope:List[str]) -> list[str]:
             diff.append(ori)
     return diff
 
-def varScopeGaps(format_code: str, var_name: str, DecPos: int, FusePos: int) -> Tuple[int, int, List[Tuple[int, int]]]:
+def varScopeGaps(format_code: str, var_name: str, DecPos: int, InitPos: int) -> Tuple[int, int, List[Tuple[int, int]]]:
     lines = format_code.split('\n')
     declare_idx = DecPos - 1
 
@@ -215,66 +215,71 @@ def varScopeGaps(format_code: str, var_name: str, DecPos: int, FusePos: int) -> 
     if not bounds:
         raise ValueError("未找到可插入变量的位置")
     
-    def filter_bounds_before_use(bounds: List[Tuple[int, int]], FusePos: int) -> List[Tuple[int, int]]:
+    def filter_bounds_before_init(bounds: List[Tuple[int, int]], InitPos: int) -> List[Tuple[int, int]]:
         filtered = []
         for start, end in bounds:
-            if end <= FusePos:
+            if end <= InitPos:
                 filtered.append((start, end))
-            elif start < FusePos:
+            elif start < InitPos:
                 # 如果区间跨过了使用位置，只保留前半部分
-                filtered.append((start, FusePos))
+                filtered.append((start, InitPos))
                 break
             else:
                 break
         return filtered
-    bounds = filter_bounds_before_use(bounds, FusePos)
+    
+    def remove_decpos_from_ranges(ranges: List[Tuple[int, int]], Decpos: int, Initpos: int) -> List[Tuple[int, int]]:
+        if Decpos != Initpos:
+            result = []
+            for start, end in ranges:
+                if Decpos < start or Decpos > end:
+                    # Decpos 不在当前范围，直接保留
+                    result.append((start, end))
+                else:
+                    # Decpos 在范围内，尝试拆分
+                    if start <= Decpos - 1:
+                        result.append((start, Decpos - 1))
+                    if Decpos + 1 <= end:
+                        result.append((Decpos + 1, end))
+            return result
+        else:
+            return ranges
+    
+    bounds = filter_bounds_before_init(bounds, InitPos)
+    bounds = remove_decpos_from_ranges(bounds, DecPos, InitPos)
     if not bounds:
         raise ValueError("变量使用有误，未找到可插入位置")
     
     # 最终包装输出带内容的 insertable gaps
     result = []
-    for start, end in bounds:
+    for i, (start, end) in enumerate(bounds):
         if 0 <= start - 1 < len(lines) and 0 <= end - 1 < len(lines):
-            result.append({
-                "start_line": start,
-                "start_content": lines[start - 1],
-                "end_line": end,
-                "end_content": lines[end - 1]
-            })
+            if start == end:
+                continue
+            for j in range(start, end):
+                result.append({
+                    "start_line": j,
+                    "start_content": lines[j - 1],
+                    "end_line": j+1,
+                    "end_content": lines[j],
+                    "description": [
+                        f"You can insert declaration between",
+                        f"{lines[j - 1]}",
+                        f"and",
+                        f"{lines[j]}",
+                    ],
+                })
         else:
             raise IndexError("插入位置越界")
+    
+    if DecPos != InitPos:
+        result.append({
+            "init_line": InitPos,
+            "content": lines[InitPos-1],
+            "description": [
+                f"You can merge declaration to initialization line:",
+                f"{lines[InitPos-1]}",
+            ],
+        })
 
     return result
-
-# def match_entities_by_key(
-#     ent1: List[renameableEntity],
-#     ent2: List[renameableEntity]
-# ) -> List[Tuple[renameableEntity, renameableEntity]]:
-#     """
-#     加速版：构建索引，加快匹配速度，同时保留 ent2 的顺序优先。
-#     """
-#     # 1. 构建哈希索引：key -> list of indices in ent2（保序）
-#     index_map = defaultdict(list)
-#     for idx, e2 in enumerate(ent2):
-#         scope_cleaned = tuple(s.split('@')[0] for s in e2.scope[2:])
-#         key = (e2.kind, e2.type, tuple(e2.modifiers), scope_cleaned)
-#         index_map[key].append(idx)
-
-#     used_indices = set()
-#     matched = []
-
-#     for e1 in ent1:
-#         scope_cleaned = tuple(s.split('@')[0] for s in e1.scope[2:])
-#         key = (e1.kind, e1.type, tuple(e1.modifiers), scope_cleaned)
-#         candidate_indices = index_map.get(key, [])
-#         found = False
-#         for idx in candidate_indices:
-#             if idx not in used_indices:
-#                 matched.append((e1, ent2[idx]))
-#                 used_indices.add(idx)
-#                 found = True
-#                 break
-#         if not found:
-#             print(f"[警告] 未找到匹配项: {e1}")
-
-#     return matched

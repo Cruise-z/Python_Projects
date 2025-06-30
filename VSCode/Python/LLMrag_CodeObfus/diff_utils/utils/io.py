@@ -105,10 +105,10 @@ def struct_doc(lang:Literal["java", "cpp", "js"],
         class_name = func_name.split(".")[0]
         
         try:
-            origin = format_func(class_name, json_data["code"], lang)
-            # obfus = format_func(class_name, json_data["after_obfus"], lang)
-            obfus = format_func(class_name, json_data["after_watermark"], lang)
-            format_origin, format_obfus = align_CodeBlocks(origin, obfus)
+            format_origin = format_func(class_name, json_data["code"], lang)
+            # format_obfus = format_func(class_name, json_data["after_obfus"], lang)
+            format_obfus = format_func(class_name, json_data["after_watermark"], lang)
+            # format_origin, format_obfus = align_CodeBlocks(origin, obfus)
         except RuntimeError as e:
             continue
         
@@ -251,11 +251,30 @@ def prompt_gen(code: str, lang: str, obfus_type: ObfusType) -> str:
         f"{obfus_type.algorithm}",
         f"",
         f"---",
-        f"### Input JSON:",
+        f"### Input format:",
+        f"You are given a JSON object with:",
+        f"- `original_code`: The original Java code, line by line;",
+        f"- `extracted_entities`: A list of local variables, each with:",
+        f"    - `usage_context`: Decl & init line;",
+        f"    - `DeclPos_rearrangeable_gaps`: Legal locations to move the declaration into.",
+        f"#### Input JSON:",
         f"{formatted}",
+        f"",
         f"---",
         f"### Output format:",
-        f"Return only the **obfuscated {lang} code**, line by line (as a code block). Do not explain anything.",
+        f"- Return only the final **Java source code** as a Markdown code block;",
+        f"- You must output the code line-by-line, preserving indentation and all non-declaration lines;",
+        f"- Do **not** explain anything, do **not** add comments or descriptions.",
+        f"### Warning:",
+        f"❌ Do not interpret or explain code meaning",
+        f"❌ Do not change initialization lines",
+        f"❌ Do not modify logic",
+        f"❌ Do not output thoughts, logs, or annotations",
+        f"✅ Only reposition declarations as allowed",
+        f"✅ Only touch the variable’s declaration line",
+        f"✅ Only within allowed ranges from metadata",
+        f"",
+        f"Proceed to apply the transformation strictly as instructed and output the final obfuscated Java code only.",
     ]
     
     return "\n".join(prompt)
