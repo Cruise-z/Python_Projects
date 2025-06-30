@@ -992,6 +992,22 @@ Please provide the obfuscated code according to the obfuscation method described
 
 
 
+```
+//put your code
+对上述代码中的所有仅有两个分支的if-else块进行如下的变换操作：交换两个分支的位置，并且改变条件(即取反原有条件并写入)
+原来： if (A) { block M } else { block N }
+变换后： if (!A) { block N } else { block M }
+这样的变换改变了代码的风格，但执行效果与原代码一致
+注意：
+1. 交换分支位置的过程中block M和block N的内容不做任何修改，仅仅是交换其在if-else块中的位置
+2. 只对上述代码中所有仅有两个分支的if-else块进行操作，其余部分原样输出！！！
+3. 请你给出处理后的完整代码，只输出完整代码！！！
+```
+
+
+
+
+
 # DeCoMa
 
 这篇论文《DeCoMa: Detecting and Purifying Code Dataset Watermarks through Dual Channel Code Abstraction》主要提出了一种名为 **DeCoMa** 的新方法，用于**检测和清除代码数据集中的水印**。其核心贡献和工作内容可以总结如下：
