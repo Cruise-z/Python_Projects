@@ -263,7 +263,7 @@ def varScopeGaps(format_code: str, var_name: str, DecPos: int, InitPos: int) -> 
                     "end_line": j+1,
                     "end_content": lines[j],
                     "description": [
-                        f"You can insert declaration between",
+                        f"Insert declaration between",
                         f"{lines[j - 1]}",
                         f"and",
                         f"{lines[j]}",
@@ -274,10 +274,11 @@ def varScopeGaps(format_code: str, var_name: str, DecPos: int, InitPos: int) -> 
     
     if DecPos != InitPos:
         result.append({
+            "merge": True,
             "init_line": InitPos,
             "content": lines[InitPos-1],
             "description": [
-                f"You can merge declaration to initialization line:",
+                f"Merge declaration to initialization line:",
                 f"{lines[InitPos-1]}",
             ],
         })

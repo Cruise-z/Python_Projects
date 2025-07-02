@@ -3,6 +3,7 @@ from .funcReg import register
 from ..codeAnalysis.ast2inf import *
 from ..codeAnalysis.infProcess import *
 from ..format import *
+import random
 
 # !混淆等级1.2: 随机化变量声明位置
 content_tag1_2 = """
@@ -43,26 +44,22 @@ Typical changes include:
 """
 
 algorithm_tag1_2 = """
-1. Find all local variables from the data stream **Entity information** extracted by Tool.
+1. Find all local variables from the data stream `extracted_entities` extracted by Tool.
 2. For each local variable:
-	- Identify the `usage_context` field and the `DeclPos_rearrangeable_gaps` field. The `DeclPos_rearrangeable_gaps` defines legal code intervals about the declaration of the variable where they can be safely repositioned, provided it's declaration appears before the variable’s initialization and within its lexical scope.
+	- Identify the `usage_context` field and the `DeclPos_rearrangeable_gaps` field. The `DeclPos_rearrangeable_gaps` defines legal code intervals about the declaration of the variable where they can be safely repositioned, provided it's declaration appears before the variable’s initialization and within its lexical scope. So you **don't need to consider whether this is reasonable**, just execute according to the given optional gaps.
 	- In `usage_context`:
         - if the `declaration` and `initialization` are in the same line:
             - Split declaration and initialization into two statements
         - if the `declaration` and `initialization` are separated:
             - (Optional) Merge `declaration` and `initialization` into a single statement.
-	- Randomly position the declaration based on the `DeclPos_rearrangeable_gaps` field, ensuring:
-        - if the `declaration` and `initialization` are splited:
-		    - `declaration` must appear before `initialization`
-            - `declaration` can go anywhere but must be rearranged **between these `DeclInitPos_rearrangeable_gaps`**  
+	- Randomly choose **one gap** in `DeclPos_rearrangeable_gaps` field to reposition the declaration:  
         - if the `declaration` and `initialization` are merged:
             - The merged declaration and initialization must be positioned at the original initialization location.
-	Ensure initialization line is **untouched** and still receives the previous value!
-3. Only relocate declaration lines. Keep all other code intact.
+3. Only relocate declaration lines. Ensure the other part of code is **untouched** and **Finally output the converted complete code**!
 """
 
 fallback_rule_tag1_2 = [
-    f"If a variable cannot be legally transformed (e.g., used in a lambda, or control-flow-sensitive position), skip its transformation and leave it unchanged.",
+    f"If a variable cannot find any gap in `DeclPos_rearrangeable_gaps` field, skip its transformation and leave it unchanged.",
 ]
 
 @register("tag1_2_entFetch")
@@ -103,7 +100,7 @@ def jsonEnt_tag1_2(entity: renameableEntity, ori_fcode: str) -> Dict[str, Any]:
                 "description": [
                     "Following are the code gaps where the declaration of this variable can be rearranged.",
                     "These gaps are determined by the analysis tool, which ensures that variable declarations are certainly before initialization and first use.",
-                    "You can rearrange the declaration of this variable to any position within these gaps.",
+                    "You can choose any gap in these gaps to rearrange the declaration of this variable.",
                 ],
                 "gaps": varScopeGaps(ori_fcode, entity.entity, entity.decPos[1], entity.initPos[1]),
             }
@@ -233,4 +230,240 @@ def jsonDiff_tag1_2(diff: diffTag1_2) -> Dict[str, Any]:
                 "description": diff.strategy[1],
             },
         }
+    }
+
+def splitDeclInit(statement: str, lang: str) -> tuple[str, str]:
+    """
+    接收一句变量声明+初始化语句和语言名称，返回拆分后的声明和初始化两部分。
+
+    示例输入：
+        statement = "final int x = 5;"
+        lang = "java"
+
+    返回：
+        ("final int x;", "x = 5;")
+    """
+    wparser = WParser(lang)
+    parser = wparser.parser
+    tree = parser.parse(bytes(statement, "utf8"))
+    root = tree.root_node
+
+    def find_decl(node):
+        if node.type == "program":
+            # 进入 program 的第一条语句
+            node = node.children[0] if node.children else None
+
+        if node and node.type == "local_variable_declaration":
+            var_node = [c for c in node.children if c.type == "variable_declarator"][0]
+            id_node = var_node.child_by_field_name("name")
+            init_node = var_node.child_by_field_name("value")
+            type_node = node.child_by_field_name("type")
+            modifiers = " ".join(c.text.decode() for c in node.children if c.type == "modifier")
+
+            var_name = id_node.text.decode()
+            init_expr = statement[init_node.start_byte:init_node.end_byte]
+            var_type = statement[type_node.start_byte:type_node.end_byte]
+
+            full_decl = f"{modifiers} {var_type} {var_name};".strip()
+            full_init = f"{var_name} = {init_expr};"
+
+            return full_decl, full_init
+        return None
+
+    return find_decl(root)
+
+def mergeDeclInit(decl: str, init: str, lang: str) -> str:
+    """
+    使用 Tree-sitter 合并声明和初始化语句为一条完整的变量初始化语句。
+
+    输入：
+        decl: "final int x;"
+        init: "x = 5;"
+        lang: "java"
+
+    输出：
+        "final int x = 5;"
+    """
+
+    # 解析声明部分
+    wparser = WParser(lang)
+    parser = wparser.parser
+
+    # Parse declaration
+    tree_decl = parser.parse(bytes(decl, "utf8"))
+    root_decl = tree_decl.root_node
+    decl_node = root_decl.children[0] if root_decl.children else None
+
+    if not decl_node or decl_node.type != "local_variable_declaration":
+        raise ValueError("声明语句格式不合法")
+
+    # 提取声明内容
+    var_node = [c for c in decl_node.children if c.type == "variable_declarator"][0]
+    id_node = var_node.child_by_field_name("name")
+    type_node = decl_node.child_by_field_name("type")
+    modifiers = " ".join(c.text.decode() for c in decl_node.children if c.type == "modifier")
+
+    var_name_decl = id_node.text.decode()
+    var_type = decl[type_node.start_byte:type_node.end_byte]
+
+    # Parse initialization
+    tree_init = parser.parse(bytes(init, "utf8"))
+    root_init = tree_init.root_node
+    expr_stmt = root_init.children[0] if root_init.children else None
+
+    if not expr_stmt or expr_stmt.type != "expression_statement":
+        raise ValueError("初始化语句格式不合法")
+
+    assignment = expr_stmt.child_by_field_name("expression")
+    if not assignment or assignment.type != "assignment_expression":
+        raise ValueError("不是赋值表达式")
+
+    lhs = assignment.child_by_field_name("left").text.decode()
+    rhs = init[assignment.child_by_field_name("right").start_byte : assignment.child_by_field_name("right").end_byte]
+
+    if lhs != var_name_decl:
+        raise ValueError(f"变量名不一致: 声明是 {var_name_decl}，初始化是 {lhs}")
+
+    merged = f"{modifiers} {var_type} {lhs} = {rhs};".strip()
+    return merged
+
+def mergeDeclInit(decl: str, init: str, lang: str) -> str:
+    """
+    使用 Tree-sitter 合并声明和初始化语句为一条完整的变量初始化语句。
+
+    输入：
+        decl: "final int x;"
+        init: "x = 5;"
+        lang: "java"
+
+    输出：
+        "final int x = 5;"
+    """
+
+    wparser = WParser(lang)
+    parser = wparser.parser
+
+    # 将声明和初始化一起包裹进合法的 Java 类中
+    wrapped_code = f"""
+    class Dummy {{
+        void dummy() {{
+            {decl}
+            {init}
+        }}
+    }}
+    """
+
+    tree = parser.parse(bytes(wrapped_code, "utf8"))
+    root = tree.root_node
+
+    # 递归查找所有需要的节点
+    local_decl = None
+    assignment = None
+
+    def visit(node):
+        nonlocal local_decl, assignment
+        if node.type == "local_variable_declaration" and not local_decl:
+            local_decl = node
+        elif node.type == "assignment_expression" and not assignment:
+            assignment = node
+        for child in node.children:
+            visit(child)
+
+    visit(root)
+
+    if not local_decl or not assignment:
+        raise ValueError("未能找到完整的声明或赋值结构")
+
+    # 提取声明部分
+    var_node = [c for c in local_decl.children if c.type == "variable_declarator"][0]
+    id_node = var_node.child_by_field_name("name")
+    type_node = local_decl.child_by_field_name("type")
+        # 提取修饰符（modifiers 节点中）
+    modifiers_node = next((c for c in local_decl.children if c.type == "modifiers"), None)
+    if modifiers_node:
+        modifiers = " ".join(c.text.decode() for c in modifiers_node.children)
+    else:
+        modifiers = ""
+
+    var_name_decl = id_node.text.decode()
+    var_type = wrapped_code[type_node.start_byte:type_node.end_byte]
+
+    # 提取初始化表达式
+    lhs_node = assignment.child_by_field_name("left")
+    rhs_node = assignment.child_by_field_name("right")
+
+    lhs = lhs_node.text.decode()
+    rhs = wrapped_code[rhs_node.start_byte:rhs_node.end_byte]
+
+    if lhs != var_name_decl:
+        raise ValueError(f"变量名不一致: 声明是 {var_name_decl}，初始化是 {lhs}")
+
+    modifier_prefix = (modifiers + " ") if modifiers else ""
+    merged = f"{modifier_prefix}{var_type} {lhs} = {rhs};"
+    return merged
+
+@register("tag1_2_instrExt")
+def jsonInstr_tag1_2(entity: renameableEntity, ori_fcode: str, lang:str) -> Dict[str, Any]:
+    # 找到可插入范围
+    gaps = varScopeGaps(ori_fcode, entity.entity, entity.decPos[1], entity.initPos[1])
+    # 随机选取一个`gaps`内的gap用来插入
+    choice = random.choice(gaps)
+    if entity.decPos[0] == entity.initPos[0]:
+        # 如果声明和初始化在同一行，后续操作只需考虑split
+        decl, init = splitDeclInit(entity.decPos[0], lang)
+        instruction = {
+            "name": entity.entity,
+            "original_declaration": {
+                "line": entity.decPos[1],
+                "content": entity.decPos[0],
+            },
+            "split": True,
+            "split_result": {
+                "declaration": decl,
+                "initialization": init,
+            },
+            "new_declaration_location": {
+                "insert_between": [
+                    f"line{choice['start_line']}: {choice['start_content']}",
+                    f"line{choice['end_line']}: {choice['end_content']}"
+                ]
+            }
+        }
+    else:
+        merged = mergeDeclInit(entity.decPos[0], entity.initPos[0], lang)
+        # 如果声明和初始化在不同的行，后续操作只需考虑是否merge
+        if(choice.get("merge", False)):
+            instruction = {
+                "name": entity.entity,
+                "original_declaration": {
+                    "line": entity.decPos[1],
+                    "content": entity.decPos[0],
+                },
+                "merge": True,
+                "merge_result": {
+                    "decl&init": merged,
+                },
+                "new_declaration_location": {
+                    "merge to initialization": [
+                        f"line{choice['init_line']}: {choice['content']}",
+                    ]
+                }
+            }
+        else:
+            instruction = {
+                "name": entity.entity,
+                "original_declaration": {
+                    "line": entity.decPos[1],
+                    "content": entity.decPos[0],
+                },
+                "merge": False,
+                "new_declaration_location": {
+                    "rearrange_between": [
+                        f"line{choice['start_line']}: {choice['start_content']}",
+                        f"line{choice['end_line']}: {choice['end_content']}"
+                    ]
+                }
+            }
+    return {
+        f"{entity.kind}": instruction
     }

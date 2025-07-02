@@ -217,64 +217,67 @@ def doc2embedData(obfus_type:ObfusType):
 def prompt_gen(code: str, lang: str, obfus_type: ObfusType) -> str:
     # 加载 parser
     wparser = WParser(lang)
-    fEnts = []
+    instEnts = []
     try:
         fcode = format_func('test', code, lang)
         ents = tagFunc(f"{obfus_type.name}_entFetch", wparser, fcode)
         for ent in ents:
-            fEnt = tagFunc(f"{obfus_type.name}_entExt", ent, fcode)
-            fEnts.append(fEnt)
+            instEnt = tagFunc(f"{obfus_type.name}_instrExt", ent, fcode, lang)
+            instEnts.append(instEnt)
     except RuntimeError as e:
         raise RuntimeError(f"Error formatting code: {e}")
     
-    item = {
-        "obfuscation_level": obfus_type.name,
-        "obfuscation_type": obfus_type.id,
+    task = {
+        "task_name": obfus_type.id,
+        "instructions": instEnts,
         "code_language": lang,
-        "original_code": fcode.splitlines(),
-        "extracted_entities": fEnts,
+        "input_code": fcode.splitlines(),
+        "output_style": [
+            f"return modified {lang} code only",
+            f"return as a Markdown code block"
+        ],
     }
-    formatted = json.dumps(item, indent=4, ensure_ascii=False)
+    formatted = json.dumps(task, indent=4, ensure_ascii=False)
     
     prompt = [
-        f"You are a code transformation engine. Your task is to apply {obfus_type.name}:{obfus_type.id} obfuscation based on the structured configuration.",
+        f"You are a code transformation engine. Your task is to execute {obfus_type.name}:{obfus_type.id} obfuscation based on the structured configuration.",
         f"",
-        f"### Task Description",
-        f"You are given {lang} code along with related transformation metadata.",
-        f"#### Description:",
-        f"{obfus_type.desc}",
-        f"#### Constraints:",
-        f"{obfus_type.constraints}",
-        f"#### Typical Changes:",
-        f"{obfus_type.typical_changes}",
-        f"#### Algorithm:",
-        f"{obfus_type.algorithm}",
-        f"",
-        f"---",
-        f"### Input format:",
-        f"You are given a JSON object with:",
-        f"- `original_code`: The original Java code, line by line;",
-        f"- `extracted_entities`: A list of local variables, each with:",
-        f"    - `usage_context`: Decl & init line;",
-        f"    - `DeclPos_rearrangeable_gaps`: Legal locations to move the declaration into.",
-        f"#### Input JSON:",
+        f"### Task Information:",
+        # f"You are given {lang} code along with related transformation metadata.",
+        # f"#### Description:",
+        # f"{obfus_type.desc}",
+        # f"#### Constraints:",
+        # f"{obfus_type.constraints}",
+        # f"#### Typical Changes:",
+        # f"{obfus_type.typical_changes}",
+        # f"#### Algorithm:",
+        # f"{obfus_type.algorithm}",
+        # f"",
+        # f"---",
+        # f"### Input format:",
+        # f"You are given a JSON object with:",
+        # f"- `input_code`: The original {lang} code, line by line;",
+        # f"- `extracted_entities`: A list of local variables, each with:",
+        # f"    - `usage_context`: Decl & init line;",
+        # f"    - `DeclPos_rearrangeable_gaps`: Legal locations to move the declaration into.",
+        # f"#### Input JSON:",
         f"{formatted}",
-        f"",
-        f"---",
-        f"### Output format:",
-        f"- Return only the final **Java source code** as a Markdown code block;",
-        f"- You must output the code line-by-line, preserving indentation and all non-declaration lines;",
-        f"- Do **not** explain anything, do **not** add comments or descriptions.",
-        f"### Warning:",
-        f"❌ Do not interpret or explain code meaning",
-        f"❌ Do not change initialization lines",
-        f"❌ Do not modify logic",
-        f"❌ Do not output thoughts, logs, or annotations",
-        f"✅ Only reposition declarations as allowed",
-        f"✅ Only touch the variable’s declaration line",
-        f"✅ Only within allowed ranges from metadata",
-        f"",
-        f"Proceed to apply the transformation strictly as instructed and output the final obfuscated Java code only.",
+        # f"",
+        # f"---",
+        # f"### Output format:",
+        # f"- Return only the final **Java source code** as a Markdown code block;",
+        # f"- You must output the code line-by-line, preserving indentation and all non-declaration lines;",
+        # f"- Do **not** explain anything, do **not** add comments or descriptions.",
+        # f"### Warning:",
+        # # f"Do not interpret or explain code meaning",
+        # f"Do not change initialization lines",
+        # f"Do not modify logic",
+        # # f"Do not output thoughts, logs, or annotations",
+        # f"Only reposition declarations as allowed",
+        # f"Only touch the variable’s declaration line",
+        # f"Only within allowed ranges from metadata",
+        # f"",
+        # f"Proceed to apply the transformation strictly as instructed and output the final obfuscated Java code only.",
     ]
     
     return "\n".join(prompt)

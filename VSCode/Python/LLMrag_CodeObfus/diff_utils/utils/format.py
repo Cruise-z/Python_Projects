@@ -1,4 +1,4 @@
-from tree_sitter import Language, Parser
+from utils.codeAnalysis.wparser import WParser
 from enum import Enum
 from dataclasses import dataclass, fields, is_dataclass
 from typing import List, Optional, Tuple, Any
@@ -340,7 +340,28 @@ def attach_lineNum_func(formatcode: str) -> str:
     ]
     return "\n".join(numbered_lines)
 
-def print_node(node, source_code, prefix="", is_last=True):
+def print_nodeNText(node, prefix="", is_last=True):
+    connector = "└── " if is_last else "├── "
+
+    # 决定如何显示当前节点
+    if node.type == "identifier" or node.type.endswith("_identifier") or node.type == "type_identifier":
+        display = f'{node.type}'
+    elif node.is_named:
+        display = f"{node.type}"
+    else:
+        # 匿名终结符，直接输出符号（例如 `{`, `;` 等）
+        display = f'"{node.type}"'
+
+    print(f"{prefix}{connector}{display}")
+
+    # 子节点递归处理
+    child_prefix = prefix + ("    " if is_last else "│   ")
+    child_count = len(node.children)
+    for i, child in enumerate(node.children):
+        is_last_child = (i == child_count - 1)
+        print_nodeNText(child, child_prefix, is_last_child)
+
+def print_nodeText(node, source_code, prefix="", is_last=True):
     # 当前节点前缀符号
     connector = "└── " if is_last else "├── "
 
@@ -360,16 +381,18 @@ def print_node(node, source_code, prefix="", is_last=True):
     child_count = len(node.children)
     for i, child in enumerate(node.children):
         is_last_child = (i == child_count - 1)
-        print_node(child, source_code, child_prefix, is_last_child)
+        print_nodeText(child, source_code, child_prefix, is_last_child)
 
-def printAST(format_code: str, lang: str):
-    LANGUAGE = Language('build/languages.so', lang)
-    parser = Parser()
-    parser.set_language(LANGUAGE)
+def printAST(format_code: str, lang: str, text:bool=False):
+    wparser = WParser(lang)
+    parser = wparser.parser
     
     tree = parser.parse(format_code.encode("utf8"))
     root = tree.root_node
-    print_node(root, format_code)
+    if text:
+        print_nodeText(root, format_code)
+    else:
+        print_nodeNText(root)
 
 # 单个实体格式化为字符串
 def field_formatter(entity: Any, field) -> str:
