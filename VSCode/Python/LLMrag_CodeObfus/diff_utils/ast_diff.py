@@ -32,8 +32,7 @@ if __name__ == '__main__':
                     throw ExceptionHelper.wrapOrThrow(ex);
                 }
             }
-            Throwable ex;
-            ex = error;
+            Throwable ex = error;
             if (ex != null) {
                 throw ExceptionHelper.wrapOrThrow(ex);
             }
@@ -76,8 +75,8 @@ if __name__ == '__main__':
     # print(formatted_str)
     
     
-    printAST(code1, 'java')
-    printAST(code1, 'java', text=True)
+    # printAST(code1, 'java')
+    # printAST(code1, 'java', text=True)
     
     zroot = build_zast(code1, 'java')
     print_zast(zroot)

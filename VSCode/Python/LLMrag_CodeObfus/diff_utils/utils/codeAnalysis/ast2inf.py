@@ -24,14 +24,14 @@ class ZASTNode:
     def __repr__(self) -> str:
         return f"ZASTNode(type='{self.type}', children={len(self.children)})"
 
-def build_zast(source_code:str, lang:str)-> ZASTNode:
+def build_zast(source_code:str, lang:str) -> ZASTNode:
     wparser = WParser(lang)
     parser = wparser.parser
     
     tree = parser.parse(source_code.encode("utf8"))
     return ZASTNode(tree.root_node, source_code)
 
-def print_zast(node, prefix="", is_last=True):
+def print_zast(node:ZASTNode, prefix="", is_last=True):
     connector = "└── " if is_last else "├── "
     extra = f' "{node.extra_text}"' if node.extra_text else ""
     print(f"{prefix}{connector}{node.type}{extra}")
