@@ -467,3 +467,124 @@ def jsonInstr_tag1_2(entity: renameableEntity, ori_fcode: str, lang:str) -> Dict
     return {
         f"{entity.kind}": instruction
     }
+
+
+# Function 1: Find all local variable declarations
+def find_local_varDecls(root: ZASTNode) -> List[Tuple[str, ZASTNode]]:
+    declarations = []
+
+    def visit(node: ZASTNode):
+        if node.type == "local_variable_declaration":
+            for child in node.children:
+                if child.type == "variable_declarator":
+                    # 只取第一个 identifier 子节点
+                    for sub in child.children:
+                        if sub.type == "identifier":
+                            declarations.append((sub.extra_text, node))
+                            break  # 只取第一个 identifier，跳出
+        for child in node.children:
+            visit(child)
+
+    visit(root)
+    return declarations
+
+# Function 2: Find enclosing block
+def find_scopeNode(varDeclNode: ZASTNode, lang:str) -> Optional[ZASTNode]:
+    rule = ScopeRules.lang(lang)
+    current = varDeclNode.parent
+    while current:
+        if rule.is_scope_boundary(current.type):
+            return current
+        current = current.parent
+    return None
+
+# Function 3: Find the initialization node
+def find_initFNode(varName: str, scopeNode: ZASTNode) -> Tuple[Optional[ZASTNode], bool]:
+    """
+    返回变量 varName 的第一次初始化所在的 scopeNode 子树内的“顶层子节点” result_node，
+    以及该节点是否就是初始化语句本身（is_direct = True 表示它就是赋值语句/声明语句本身）。
+    """
+    
+    result_node = None
+    is_direct = False
+
+    def dfs(node: ZASTNode, path: list) -> bool:
+        nonlocal result_node, is_direct
+        # 情况 1：声明即初始化
+        if node.type == "local_variable_declaration":
+            for decl in node.children:
+                if decl.type == "variable_declarator":
+                    has_equal = any(grand.type == "=" for grand in decl.children)
+                    for id_node in decl.children:
+                        if id_node.type == "identifier" and id_node.extra_text == varName:
+                            if has_equal:
+                                result_node = path[1] if len(path) > 1 else node
+                                is_direct = (result_node == node)
+                                return True
+        # 情况 2：赋值初始化
+        if node.type == "assignment_expression":
+            lhs = node.children[0]
+            if lhs.type == "identifier" and lhs.extra_text == varName:
+                result_node = path[1] if len(path) > 1 else node
+                is_direct = (result_node == node)
+                return True
+        # 递归查找子节点
+        for child in node.children:
+            if dfs(child, path + [child]):
+                return True
+        return False
+
+    dfs(scopeNode, [scopeNode])
+    return result_node, is_direct
+
+
+
+def find_insertion_points(varName: str, scopeNode: ZASTNode, varDeclNode: ZASTNode) -> Optional[List[int]]:
+    """_summary_
+    Args:
+        varName (str): _description_
+        scopeNode (ZASTNode): _description_
+        varDeclNode (ZASTNode): _description_
+    Returns:
+        Optional[List[int]]: _description_
+    Logic:
+    -----
+    - 判断`scopeNode`是否为`block`类型(是才有插入空间)
+    - 寻找初始化所在`scopeNode`的子节点`initFNode`
+    - 判断`DeclNode`与`initFNode`是否相等，从`DeclNode`拆分出`Decl`:
+        - = -> 拆分出`Decl`部分后原结点必然存在内容 -> 可插入范围在`initFNode`之前即可
+        - != -> 拆分出`Decl`部分后原结点是否存在内容(如其他相同类型的变量的声明初始化):
+            - 存在 -> 只需在`initFNode`之前即可
+            - 不存在 -> 排除掉自身索引`index`和`index-1`
+            同时判断`initFNode`本身是不是初始化节点:
+                - 是 -> 增加`Decl`和`Init`合并的选择(添加索引`-1`表示这种选择)
+    """
+    # 1. 当scopeNode为`block`类型才有插入空间
+    if scopeNode.type != "block":
+        return None
+    # 2. 获取作用域下的子节点列表
+    child_nodes = scopeNode.children
+    if not child_nodes:
+        return []
+    # 3. 尝试找初始化所在子节点及声明节点索引
+    initFnode, isInit = find_initFNode(varName, scopeNode)
+    try:
+        decl_idx = child_nodes.index(varDeclNode)
+    except ValueError:
+        return None
+    # 4. 找到 init_node 的索引（如果存在）
+    if initFnode:
+        try:
+            init_idx = child_nodes.index(initFnode)
+        except ValueError:
+            init_idx = len(child_nodes)
+    else:
+        init_idx = len(child_nodes)
+    # 5. 合法插入索引：在 0 到 init_idx - 1 范围内，排除 decl_idx 和 decl_idx - 1
+    valid_indices = []
+    for i in range(init_idx):
+        if i != decl_idx and i != decl_idx - 1:
+            valid_indices.append(i)
+
+    return valid_indices if valid_indices else None
+

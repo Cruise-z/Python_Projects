@@ -1,7 +1,7 @@
 from .wparser import WParser
 from .ast2inf import *
 from collections import defaultdict
-from typing import Dict, Callable, List
+from typing import Dict, Callable, List, Any
 
 def make_key_fn(key_fields: List[str]) -> Callable[[renameableEntity], Tuple[Any, ...]]:
     """

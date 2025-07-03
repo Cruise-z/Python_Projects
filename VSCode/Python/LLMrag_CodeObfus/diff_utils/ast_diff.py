@@ -20,6 +20,8 @@ if __name__ == '__main__':
     code1 = """
     public class example {
         public boolean blockingAwait(long timeout, TimeUnit unit) {
+            int a = 1, b = 2, c;
+            for (int i = 0; i < 10; i++) {}
             if (getCount() != 0) {
                 try {
                     BlockingHelper.verifyNonBlocking();
@@ -78,8 +80,66 @@ if __name__ == '__main__':
     # printAST(code1, 'java')
     # printAST(code1, 'java', text=True)
     
-    zroot = build_zast(code1, 'java')
+    code1 = """
+    public class example {
+        public boolean blockingAwait(long timeout, TimeUnit unit) {
+            int m;
+            m = 0;
+            int x = 0, y ,z = 5;
+            Throwable ex;
+            y = 3;
+            if (getCount() != 0) {
+                try {
+                    BlockingHelper.verifyNonBlocking();
+                    if (!await(timeout, unit)) {
+                        dispose();
+                        return false;
+                    }
+                } catch (InterruptedException ex) {
+                    dispose();
+                    throw ExceptionHelper.wrapOrThrow(ex);
+                }
+            }
+            if (z == 5){
+                if (z == 5) {
+                    
+                }
+                for (int i = 0; i < 10; i++) {
+                    try{
+                        // some code
+                    } catch (Exception e) {
+                        // handle exception
+                        ex = error;
+                    }
+                }
+            }
+            if (ex != null) {
+                throw ExceptionHelper.wrapOrThrow(ex);
+            }
+            return true;
+        }
+    }
+"""
+    
+    lang = 'java'
+    zroot = build_zast(code1, lang)
     print_zast(zroot)
+    decls = find_local_varDecls(zroot)
+    print(decls)
+    var = decls[5]
+    print(f"variable declaration is: {var[0]}")
+    Fblock = find_scopeNode(var[1], lang)
+    print(Fblock.type)
+    print(Fblock.children)
+    
+    initnode, isInit = find_initFNode(var[0], Fblock)
+    print(initnode)
+    print(initnode.type)
+    print(initnode.children)
+    print(initnode.parent == Fblock)
+    
+    index = find_insertion_points(var[0], Fblock, var[1])
+    print(f"index of insertion points: {index}")
     
     # 假设你的输出结果是 ret
     # funcs, params, locals_, catches, foreach_vars, lambda_params = extract_renameable_entities(format_code2, wparser)

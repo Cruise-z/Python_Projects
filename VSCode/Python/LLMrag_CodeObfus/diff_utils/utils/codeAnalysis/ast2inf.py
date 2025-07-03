@@ -1,28 +1,7 @@
 from ._datacls import *
 from .wparser import WParser
-from tree_sitter import Node
 from collections import defaultdict
 import re
-
-class ZASTNode:
-    def __init__(self, ts_node: Node, source_code: str):
-        self.type: str = ts_node.type
-        self.children: List[ZASTNode] = []
-        # self.start_byte: int = ts_node.start_byte
-        # self.end_byte: int = ts_node.end_byte
-        self.is_named: bool = ts_node.is_named
-        self.extra_text: Optional[str] = None
-
-        # 仅在叶子节点或非命名 token 节点上存储源码片段
-        if len(ts_node.children) == 0 or not ts_node.is_named:
-            self.extra_text = source_code[ts_node.start_byte:ts_node.end_byte]
-
-        # 递归构建子节点
-        for child in ts_node.children:
-            self.children.append(ZASTNode(child, source_code))
-
-    def __repr__(self) -> str:
-        return f"ZASTNode(type='{self.type}', children={len(self.children)})"
 
 def build_zast(source_code:str, lang:str) -> ZASTNode:
     wparser = WParser(lang)
