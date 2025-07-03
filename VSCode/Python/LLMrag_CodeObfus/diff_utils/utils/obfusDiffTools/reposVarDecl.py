@@ -3,6 +3,7 @@ from .funcReg import register
 from ..codeAnalysis.ast2inf import *
 from ..codeAnalysis.infProcess import *
 from ..format import *
+from copy import deepcopy
 import random
 
 # !混淆等级1.2: 随机化变量声明位置
@@ -537,7 +538,92 @@ def find_initFNode(varName: str, scopeNode: ZASTNode) -> Tuple[Optional[ZASTNode
     dfs(scopeNode, [scopeNode])
     return result_node, is_direct
 
+def extractVarDecl(varName: str, oriDeclNode: ZASTNode) -> Tuple[Optional[ZASTNode], Optional[ZASTNode], bool]:
+    """
+    从 ori_decl_node 中提取变量 var_name 的声明和初始化部分。
 
+    返回:
+        - 新声明节点 (local_variable_declaration)
+        - 初始化节点 (expression_statement)
+        - bool：原始节点是否为空
+    """
+
+    # 1. 获取类型修饰部分（如 int, final 等）
+    fixed_parts = [c for c in oriDeclNode.children if c.type not in {"variable_declarator", ",", ";"}]
+    fixed_parts_clone = [c.clone() for c in fixed_parts]
+
+    # 初始化新声明节点
+    new_decl_node = ZASTNode.from_type("local_variable_declaration")
+    new_decl_node.children.extend(fixed_parts_clone)
+
+    new_init_node = None
+    new_var_decl = None
+    new_children = []
+
+    i = 0
+    children = oriDeclNode.children
+
+    while i < len(children):
+        node = children[i]
+
+        if node.type == "variable_declarator":
+            # 判断是否为目标变量
+            is_target = any(c.type == "identifier" and c.extra_text == varName for c in node.children)
+
+            if is_target:
+                # 提取声明部分
+                new_var_decl = ZASTNode.from_type("variable_declarator")
+                for c in node.children:
+                    if c.type == "identifier" and c.extra_text == varName:
+                        new_var_decl.children.append(c.clone())
+                        break
+                new_decl_node.children.append(new_var_decl)
+
+                # 提取初始化表达式
+                if any(c.type == "=" for c in node.children):
+                    eq_idx = next(i for i, c in enumerate(node.children) if c.type == "=")
+                    lhs = [c.clone() for c in node.children[:eq_idx]]
+                    eq = ZASTNode.from_type("=", "=")
+                    rhs = [c.clone() for c in node.children[eq_idx + 1:]]
+
+                    assign_expr = ZASTNode.from_type("assignment_expression")
+                    assign_expr.children.extend(lhs + [eq] + rhs)
+
+                    new_init_node = ZASTNode.from_type("expression_statement")
+                    new_init_node.children.extend([assign_expr, ZASTNode.from_type(";", ";")])
+
+                # 删除相关逗号
+                if i > 0 and children[i - 1].type == ",":
+                    new_children.pop()  # 删除前逗号
+                elif i + 1 < len(children) and children[i + 1].type == ",":
+                    i += 1  # 跳过后逗号
+            else:
+                new_children.append(node)
+
+        elif node.type == ",":
+            new_children.append(node)
+
+        elif node.type == ";":
+            pass  # 分号稍后处理
+
+        else:
+            if node not in fixed_parts:
+                new_children.append(node)
+
+        i += 1
+
+    # 添加分号到原始和新声明中
+    semi = next((c for c in children if c.type == ";"), None)
+    if semi:
+        if semi not in new_children:
+            new_children.append(semi)
+        new_decl_node.children.append(semi.clone())
+
+    # 更新原始声明节点的 children
+    oriDeclNode.children = fixed_parts + new_children
+    is_ori_empty = all(c.type != "variable_declarator" for c in oriDeclNode.children)
+
+    return (new_decl_node if new_var_decl else None, new_init_node, is_ori_empty)
 
 def find_insertion_points(varName: str, scopeNode: ZASTNode, varDeclNode: ZASTNode) -> Optional[List[int]]:
     """_summary_
@@ -551,7 +637,7 @@ def find_insertion_points(varName: str, scopeNode: ZASTNode, varDeclNode: ZASTNo
     -----
     - 判断`scopeNode`是否为`block`类型(是才有插入空间)
     - 寻找初始化所在`scopeNode`的子节点`initFNode`
-    - 判断`DeclNode`与`initFNode`是否相等，从`DeclNode`拆分出`Decl`:
+    - 判断`DeclNode`与`initFNode`是否相等(后续从`DeclNode`拆分出`Decl`):
         - = -> 拆分出`Decl`部分后原结点必然存在内容 -> 可插入范围在`initFNode`之前即可
         - != -> 拆分出`Decl`部分后原结点是否存在内容(如其他相同类型的变量的声明初始化):
             - 存在 -> 只需在`initFNode`之前即可

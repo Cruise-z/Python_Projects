@@ -1,4 +1,5 @@
 from utils.codeAnalysis.wparser import WParser
+from utils.codeAnalysis._datacls import ZASTNode
 from enum import Enum
 from dataclasses import dataclass, fields, is_dataclass
 from typing import List, Optional, Tuple, Any
@@ -382,6 +383,21 @@ def print_nodeText(node, source_code, prefix="", is_last=True):
     for i, child in enumerate(node.children):
         is_last_child = (i == child_count - 1)
         print_nodeText(child, source_code, child_prefix, is_last_child)
+
+def print_ZASTNode(node: "ZASTNode", prefix: str = "", is_last: bool = True):
+    connector = "└── " if is_last else "├── "
+
+    if node.extra_text:
+        text = node.extra_text.strip().replace("\n", "\\n")  # 把处理提前
+        display = f'{node.type} "{text}"'
+    else:
+        display = f"{node.type}"
+
+    print(f"{prefix}{connector}{display}")
+
+    child_prefix = prefix + ("    " if is_last else "│   ")
+    for i, child in enumerate(node.children):
+        print_ZASTNode(child, child_prefix, i == len(node.children) - 1)
 
 def printAST(format_code: str, lang: str, text:bool=False):
     wparser = WParser(lang)

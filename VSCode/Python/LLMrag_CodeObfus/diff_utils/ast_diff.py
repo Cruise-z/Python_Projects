@@ -85,7 +85,8 @@ if __name__ == '__main__':
         public boolean blockingAwait(long timeout, TimeUnit unit) {
             int m;
             m = 0;
-            int x = 0, y ,z = 5;
+            LinkedList < Cookie > x, y ,z = new LinkedList < Cookie > ( );
+            x = 6;
             Throwable ex;
             y = 3;
             if (getCount() != 0) {
@@ -126,20 +127,29 @@ if __name__ == '__main__':
     print_zast(zroot)
     decls = find_local_varDecls(zroot)
     print(decls)
-    var = decls[5]
+    var = decls[1]
     print(f"variable declaration is: {var[0]}")
     Fblock = find_scopeNode(var[1], lang)
     print(Fblock.type)
     print(Fblock.children)
     
-    initnode, isInit = find_initFNode(var[0], Fblock)
-    print(initnode)
-    print(initnode.type)
-    print(initnode.children)
-    print(initnode.parent == Fblock)
+    initFNode, isInit = find_initFNode(var[0], Fblock)
+    print(initFNode)
+    print(initFNode.type)
+    print(initFNode.children)
+    print(initFNode.parent == Fblock)
     
     index = find_insertion_points(var[0], Fblock, var[1])
     print(f"index of insertion points: {index}")
+    
+    print_ZASTNode(var[1])
+    declNode, initNode, isempty = extractVarDecl(var[0], var[1])
+    if declNode:
+        print_ZASTNode(declNode)
+    if initNode:
+        print_ZASTNode(initNode)
+    print_ZASTNode(var[1])
+    print(isempty)
     
     # 假设你的输出结果是 ret
     # funcs, params, locals_, catches, foreach_vars, lambda_params = extract_renameable_entities(format_code2, wparser)

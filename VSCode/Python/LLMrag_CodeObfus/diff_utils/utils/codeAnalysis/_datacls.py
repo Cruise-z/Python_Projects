@@ -4,28 +4,41 @@ from typing import List, Optional, Tuple, Set, Dict
 import copy
 
 class ZASTNode:
-    def __init__(self, ts_node: Node, source_code: str):
-        self.type: str = ts_node.type
+    def __init__(
+        self, 
+        ts_node:Optional[Node] = None, 
+        source_code:Optional[str] = None, 
+        *, 
+        node_type: Optional[str] = None, 
+        extra_text: Optional[str] = None
+    ):
+        self.type: str = ""
         self.parent: Optional["ZASTNode"] = None
         self.children: List[ZASTNode] = []
         # self.start_byte: int = ts_node.start_byte
         # self.end_byte: int = ts_node.end_byte
-        self.is_named: bool = ts_node.is_named
-        self.extra_text: Optional[str] = None
+        self.is_named: bool = True
+        self.extra_text: Optional[str] = extra_text
 
-        # 仅在叶子节点或非命名 token 节点上存储源码片段
-        if len(ts_node.children) == 0 or not ts_node.is_named:
-            self.extra_text = source_code[ts_node.start_byte:ts_node.end_byte]
-
-        # 递归构建子节点
-        for child in ts_node.children:
-            child_node = ZASTNode(child, source_code)
-            child_node.parent = self
-            self.children.append(child_node)
+        if ts_node and source_code:
+            self.type = ts_node.type
+            self.is_named = ts_node.is_named
+            if len(ts_node.children) == 0 or not ts_node.is_named:
+                self.extra_text = source_code[ts_node.start_byte:ts_node.end_byte]
+            for child in ts_node.children:
+                child_node = ZASTNode(ts_node=child, source_code=source_code)
+                child_node.parent = self
+                self.children.append(child_node)
+        elif node_type:
+            self.type = node_type  # for manually created node
+            
+    @classmethod
+    def from_type(cls, node_type: str, extra_text: Optional[str] = None) -> "ZASTNode":
+        return cls(node_type=node_type, extra_text=extra_text)
 
     def clone(self):
         return copy.deepcopy(self)
-    
+
     def __repr__(self) -> str:
         return f"ZASTNode(type='{self.type}', children={len(self.children)})"
 
