@@ -85,9 +85,10 @@ if __name__ == '__main__':
     // test 2: var[1]: n
     // test 3: var[2,3,4]: x,y,z
     // test 4: var[5]: ex
+    // test 5: var[6]: i
     public class example {
         public boolean blockingAwait(long timeout, TimeUnit unit) {
-            int m;
+            LinkedList < Cookie > m;
             m = 0;
             LinkedList < Cookie > n = 666;
             LinkedList < Cookie > x, y ,z = new LinkedList < Cookie > ( );
@@ -132,7 +133,7 @@ if __name__ == '__main__':
     print_zast(zroot)
     decls = find_local_varDecls(zroot)
     print(decls)
-    var = decls[5]
+    var = decls[3]
     print(f"variable declaration is: {var[0]}")
     Fblock = find_scopeNode(var[1], lang)
     print(Fblock.type)
@@ -154,19 +155,22 @@ if __name__ == '__main__':
     # print_ZASTNode(var[1])
     # print(isempty)
     
-    highlight_print(f"Original decNode:")
-    print_ZASTNode(var[1])
-    declNode, initNode, index, isempty = reorg_varDecl(var[0], Fblock, var[1])
-    highlight_print(f"After process:")
-    highlight_print(f"Original_processed")
-    print_ZASTNode(var[1])
-    highlight_print(f"Declaration")
-    print_ZASTNode(declNode)
-    if initNode:
-        highlight_print(f"Initialization")
-        print_ZASTNode(initNode)
-    highlight_print(f"ori_decnode is empty: {isempty}")
-    print(f"index of insertion points: {index}")
+    # highlight_print(f"Original decNode:")
+    # print_ZASTNode(var[1])
+    # declNode, initNode, oriInitIdx, index, isempty = reorg_varDecl(var[0], Fblock, var[1])
+    # highlight_print(f"After process:")
+    # highlight_print(f"Original_processed")
+    # print_ZASTNode(var[1])
+    # highlight_print(f"Declaration")
+    # print_ZASTNode(declNode)
+    # if initNode:
+    #     highlight_print(f"Initialization")
+    #     print_ZASTNode(initNode)
+    # highlight_print(f"ori_decnode is empty: {isempty}")
+    # print(f"index of insertion points: {index}")
+    
+    reposVarDecl(var[0], var[1], lang)
+    print_ZASTNode(zroot)
     
     # 假设你的输出结果是 ret
     # funcs, params, locals_, catches, foreach_vars, lambda_params = extract_renameable_entities(format_code2, wparser)

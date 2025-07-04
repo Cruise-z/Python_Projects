@@ -53,13 +53,14 @@ def find_initFNode(varName: str, scopeNode: ZASTNode) -> Tuple[Optional[ZASTNode
     """
     返回变量 varName 的第一次初始化所在的 scopeNode 子树内的“顶层子节点” result_node，
     以及该节点是否就是初始化语句本身（is_direct = True 表示它就是赋值语句/声明语句本身）。
+    若未找到初始化节点，则返回 (None, False)
     """
     
     result_node = None
-    is_direct = False
+    is_directInit = False
 
     def dfs(node: ZASTNode, path: list) -> bool:
-        nonlocal result_node, is_direct
+        nonlocal result_node, is_directInit
         # 情况 1：声明即初始化
         if node.type == "local_variable_declaration":
             for decl in node.children:
@@ -69,14 +70,13 @@ def find_initFNode(varName: str, scopeNode: ZASTNode) -> Tuple[Optional[ZASTNode
                         if id_node.type == "identifier" and id_node.extra_text == varName:
                             if has_equal:
                                 result_node = path[1] if len(path) > 1 else node
-                                is_direct = (node.parent == result_node)
                                 return True
         # 情况 2：赋值初始化
         if node.type == "assignment_expression":
             lhs = node.children[0]
             if lhs.type == "identifier" and lhs.extra_text == varName:
                 result_node = path[1] if len(path) > 1 else node
-                is_direct = (node.parent == result_node)
+                is_directInit = (node.parent == result_node)
                 return True
         # 递归查找子节点
         for child in node.children:
@@ -85,7 +85,7 @@ def find_initFNode(varName: str, scopeNode: ZASTNode) -> Tuple[Optional[ZASTNode
         return False
 
     dfs(scopeNode, [scopeNode])
-    return result_node, is_direct
+    return result_node, is_directInit
 
 # Extract variable declaration from original declaration node
 def extractVarDecl(varName: str, oriDeclNode: ZASTNode) -> Tuple[Optional[ZASTNode], Optional[ZASTNode], bool]:
@@ -174,6 +174,61 @@ def extractVarDecl(varName: str, oriDeclNode: ZASTNode) -> Tuple[Optional[ZASTNo
     is_ori_empty = all(c.type != "variable_declarator" for c in oriDeclNode.children)
 
     return (new_decl_node if new_var_decl else None, new_init_node, is_ori_empty)
+
+def mergeDeclInit(decl_node: ZASTNode, init_node: ZASTNode) -> ZASTNode:
+    """
+    合并变量声明节点和初始化节点，生成一个新的 local_variable_declaration 节点。
+
+    参数:
+    - decl_node: 含类型和 identifier 的 local_variable_declaration 节点（不含初始化）
+    - init_node: 含 assignment_expression 的 expression_statement 节点
+
+    返回:
+    - 合并后的 local_variable_declaration 节点
+    """
+
+    # 创建合并节点
+    merged_node = ZASTNode.from_type("local_variable_declaration")
+
+    # 类型部分拷贝
+    type_parts = [c.clone() for c in decl_node.children if c.type not in {"variable_declarator", ";"}]
+    merged_node.children.extend(type_parts)
+
+    # 获取变量名
+    var_decl = next((c for c in decl_node.children if c.type == "variable_declarator"), None)
+    if var_decl is None:
+        raise ValueError("Declaration node missing variable_declarator")
+
+    var_id = next((c for c in var_decl.children if c.type == "identifier"), None)
+    if var_id is None:
+        raise ValueError("No identifier found in declaration")
+    var_name = var_id.extra_text
+
+    # 初始化节点检查
+    if not init_node.children or init_node.children[0].type != "assignment_expression":
+        raise ValueError("Initialization node does not contain assignment_expression")
+
+    assign_expr = init_node.children[0]
+    lhs, eq, *rhs = assign_expr.children
+    if lhs.type != "identifier" or lhs.extra_text != var_name:
+        raise ValueError("LHS identifier does not match declaration name")
+
+    # 构造新的 variable_declarator
+    new_var_decl = ZASTNode.from_type("variable_declarator")
+    new_var_decl.children.append(var_id.clone())      # identifier
+    new_var_decl.children.append(eq.clone())          # "="
+    new_var_decl.children.extend([c.clone() for c in rhs])  # RHS
+
+    merged_node.children.append(new_var_decl)
+
+    # 分号处理
+    semi = next((c for c in decl_node.children if c.type == ";"), None)
+    if semi:
+        merged_node.children.append(semi.clone())
+    else:
+        merged_node.children.append(ZASTNode.from_type(";", ";"))
+
+    return merged_node
 
 # 提取函数中所有可重命名实体（函数名、参数名、局部变量名）及其详细信息
 def extract_renameable_entities(format_code:str, wparser:WParser) -> list:
