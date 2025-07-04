@@ -81,10 +81,15 @@ if __name__ == '__main__':
     # printAST(code1, 'java', text=True)
     
     code1 = """
+    // test 1: var[0]: m
+    // test 2: var[1]: n
+    // test 3: var[2,3,4]: x,y,z
+    // test 4: var[5]: ex
     public class example {
         public boolean blockingAwait(long timeout, TimeUnit unit) {
             int m;
             m = 0;
+            LinkedList < Cookie > n = 666;
             LinkedList < Cookie > x, y ,z = new LinkedList < Cookie > ( );
             x = 6;
             Throwable ex;
@@ -127,29 +132,41 @@ if __name__ == '__main__':
     print_zast(zroot)
     decls = find_local_varDecls(zroot)
     print(decls)
-    var = decls[1]
+    var = decls[5]
     print(f"variable declaration is: {var[0]}")
     Fblock = find_scopeNode(var[1], lang)
     print(Fblock.type)
     print(Fblock.children)
     
-    initFNode, isInit = find_initFNode(var[0], Fblock)
+    initFNode, isDirect = find_initFNode(var[0], Fblock)
     print(initFNode)
     print(initFNode.type)
     print(initFNode.children)
     print(initFNode.parent == Fblock)
+    highlight_print(f"isDirect?:{isDirect}")
     
-    index = find_insertion_points(var[0], Fblock, var[1])
-    print(f"index of insertion points: {index}")
+    # print_ZASTNode(var[1])
+    # declNode, initNode, isempty = extractVarDecl(var[0], var[1])
+    # if declNode:
+    #     print_ZASTNode(declNode)
+    # if initNode:
+    #     print_ZASTNode(initNode)
+    # print_ZASTNode(var[1])
+    # print(isempty)
     
+    highlight_print(f"Original decNode:")
     print_ZASTNode(var[1])
-    declNode, initNode, isempty = extractVarDecl(var[0], var[1])
-    if declNode:
-        print_ZASTNode(declNode)
+    declNode, initNode, index, isempty = reorg_varDecl(var[0], Fblock, var[1])
+    highlight_print(f"After process:")
+    highlight_print(f"Original_processed")
+    print_ZASTNode(var[1])
+    highlight_print(f"Declaration")
+    print_ZASTNode(declNode)
     if initNode:
+        highlight_print(f"Initialization")
         print_ZASTNode(initNode)
-    print_ZASTNode(var[1])
-    print(isempty)
+    highlight_print(f"ori_decnode is empty: {isempty}")
+    print(f"index of insertion points: {index}")
     
     # 假设你的输出结果是 ret
     # funcs, params, locals_, catches, foreach_vars, lambda_params = extract_renameable_entities(format_code2, wparser)
