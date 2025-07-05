@@ -574,6 +574,7 @@ def reposVarsDecl(zroot:ZASTNode, lang:str):
     decls = find_local_varDecls(zroot)
     for (varName, oriDeclNode) in decls:
         try:
+            highlight_print(f"varname is: {varName}")
             reposVarDecl(varName, oriDeclNode, lang)
             print_ZASTNode(zroot)
         except:

@@ -81,79 +81,74 @@ if __name__ == '__main__':
     # printAST(code1, 'java', text=True)
     
     code1 = """
-    // test 1: var[0]: m
-    // test 2: var[1]: n
-    // test 3: var[2,3,4]: x,y,z
-    // test 4: var[5]: ex
-    // test 5: var[6]: i
-    public class example {
-        public boolean blockingAwait(long timeout, TimeUnit unit) {
-            LinkedList < Cookie > m;
-            m = 0;
-            LinkedList < Cookie > n = 666;
-            LinkedList < Cookie > x, y ,z = new LinkedList < Cookie > ( );
-            x = 6;
-            Throwable ex;
-            y = 3;
-            if (getCount() != 0) {
-                try {
-                    BlockingHelper.verifyNonBlocking();
-                    if (!await(timeout, unit)) {
-                        dispose();
-                        return false;
-                    }
-                } catch (InterruptedException ex) {
+// test 1: var[0]: m
+// test 2: var[1]: n
+// test 3: var[2,3,4]: x,y,z
+// test 4: var[5]: ex
+// test 5: var[6]: j
+// test 6: var[7]: i
+public class example {
+    public boolean blockingAwait(long timeout, TimeUnit unit) {
+        LinkedList < Cookie > m;
+        m = 0;
+        LinkedList < Cookie > n = 666;
+        LinkedList < Cookie > x, y ,z = new LinkedList < Cookie > ( );
+        x = 6;
+        Throwable ex;
+        y = 3;
+        int j;
+        if (getCount() != 0) {
+            try {
+                BlockingHelper.verifyNonBlocking();
+                if (!await(timeout, unit)) {
                     dispose();
-                    throw ExceptionHelper.wrapOrThrow(ex);
+                    return false;
                 }
-            }
-            if (z == 5){
-                if (z == 5) {
-                    
-                }
-                for (int i = 0; i < 10; i++) {
-                    try{
-                        // some code
-                    } catch (Exception e) {
-                        // handle exception
-                        ex = error;
-                    }
-                }
-            }
-            if (ex != null) {
+            } catch (InterruptedException ex) {
+                dispose();
                 throw ExceptionHelper.wrapOrThrow(ex);
             }
-            return true;
         }
+        if (z == 5){
+            if (z == 5) {
+                
+            }
+            for (int i = 0; i < 10; i++) {
+                try{
+                    // some code
+                } catch (Exception e) {
+                    // handle exception
+                    ex = error;
+                }
+            }
+        }
+        if (ex != null) {
+            throw ExceptionHelper.wrapOrThrow(ex);
+        }
+        return true;
     }
+}
 """
     
     lang = 'java'
     zroot = build_zast(code1, lang)
     print_zast(zroot)
-    decls = find_local_varDecls(zroot)
-    print(decls)
-    var = decls[3]
-    print(f"variable declaration is: {var[0]}")
-    Fblock = find_scopeNode(var[1], lang)
-    print(Fblock.type)
-    print(Fblock.children)
     
-    initFNode, isDirect = find_initFNode(var[0], Fblock)
-    print(initFNode)
-    print(initFNode.type)
-    print(initFNode.children)
-    print(initFNode.parent == Fblock)
-    highlight_print(f"isDirect?:{isDirect}")
+    # decls = find_local_varDecls(zroot)
+    # print(decls)
+    # var = decls[5]
+    # print(f"variable declaration is: {var[0]}")
+    # Fblock = find_scopeNode(var[1], lang)
+    # print(Fblock.type)
+    # print(Fblock.children)
     
-    # print_ZASTNode(var[1])
-    # declNode, initNode, isempty = extractVarDecl(var[0], var[1])
-    # if declNode:
-    #     print_ZASTNode(declNode)
-    # if initNode:
-    #     print_ZASTNode(initNode)
-    # print_ZASTNode(var[1])
-    # print(isempty)
+    # initFNode, isDirect = find_initFNode(var[0], Fblock)
+    # if initFNode:
+    #     print_ZASTNode(initFNode)
+    #     print(initFNode.type)
+    #     print(initFNode.children)
+    #     print(initFNode.parent == Fblock)
+    # highlight_print(f"isDirect?:{isDirect}")
     
     # highlight_print(f"Original decNode:")
     # print_ZASTNode(var[1])
@@ -169,7 +164,8 @@ if __name__ == '__main__':
     # highlight_print(f"ori_decnode is empty: {isempty}")
     # print(f"index of insertion points: {index}")
     
-    reposVarDecl(var[0], var[1], lang)
+    # reposVarDecl(var[0], var[1], lang)
+    reposVarsDecl(zroot, lang)
     print_ZASTNode(zroot)
     
     # 假设你的输出结果是 ret
