@@ -6,3 +6,6 @@ from .codeAnalysis.infProcess import *
 from .obfusDiffTools.funcReg import tagFunc
 from .obfusDiffTools.renameEnt import *
 from .obfusDiffTools.reposVarDecl import *
+from .obfusTransTools.reposVarDecl import *
+from .obfusTransTools.loopCondition import *
+from .obfusTransTools.updateVar import *

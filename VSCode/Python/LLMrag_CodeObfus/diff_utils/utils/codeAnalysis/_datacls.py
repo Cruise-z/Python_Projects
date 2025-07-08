@@ -41,6 +41,28 @@ class ZASTNode:
 
     def __repr__(self) -> str:
         return f"ZASTNode(type='{self.type}', children={len(self.children)})"
+    
+    def json(self, include_path=False, path="root") -> dict:
+        json_node = {
+            "type": self.type,
+            "is_named": self.is_named,
+            "leaf": len(self.children) == 0,
+            "num_children": len(self.children),
+            "children": [
+                child.json(include_path=include_path, path=f"{path}/{child.type}")
+                for child in self.children
+            ]
+        }
+
+        # Only include extra_text if it's not None
+        if self.extra_text is not None:
+            json_node["extra_text"] = self.extra_text
+
+        if include_path:
+            json_node["path_hint"] = path
+
+        return json_node
+
 
 @dataclass
 class ScopeRule:

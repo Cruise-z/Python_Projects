@@ -80,6 +80,15 @@ if __name__ == '__main__':
     # printAST(code1, 'java')
     # printAST(code1, 'java', text=True)
     
+    # 假设你的输出结果是 ret
+    # funcs, params, locals_, catches, foreach_vars, lambda_params = extract_renameable_entities(format_code2, wparser)
+
+    # print_renameable_entities([funcs, params, locals_, catches, foreach_vars, lambda_params])
+    
+    # diff = tagDiff("tag1_2", wparser, format_code1, format_code2)
+    
+    # print(diff)
+    
     code1 = """
 // test 1: var[0]: m
 // test 2: var[1]: n
@@ -111,9 +120,9 @@ public class example {
         }
         if (z == 5){
             if (z == 5) {
-                
+                z+=1;
             }
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 10; i=i+1) {
                 try{
                     // some code
                 } catch (Exception e) {
@@ -125,10 +134,22 @@ public class example {
         if (ex != null) {
             throw ExceptionHelper.wrapOrThrow(ex);
         }
+        while(1){
+            while(true){
+                
+            }
+        }
         return true;
     }
 }
 """
+    code1 = """public void testFunction(int input) {
+        int a = 10;
+        int b;
+        b = input;
+        int h;
+        h = h + 1;
+    }"""
     
     lang = 'java'
     zroot = build_zast(code1, lang)
@@ -165,19 +186,14 @@ public class example {
     # print(f"index of insertion points: {index}")
     
     # reposVarDecl(var[0], var[1], lang)
-    reposVarsDecl(zroot, lang)
+    # reposVarsDecl(zroot, lang)
+    
+    # whileCondTrans(zroot)
+    updateIncDec(zroot)
     print_ZASTNode(zroot)
-    
-    # 假设你的输出结果是 ret
-    # funcs, params, locals_, catches, foreach_vars, lambda_params = extract_renameable_entities(format_code2, wparser)
+    # zjson = zroot.json()
+    # print(json.dumps(zjson, indent=2))
 
-    # print_renameable_entities([funcs, params, locals_, catches, foreach_vars, lambda_params])
-
-    
-    
-    # diff = tagDiff("tag1_2", wparser, format_code1, format_code2)
-    
-    # print(diff)
     
     
     
