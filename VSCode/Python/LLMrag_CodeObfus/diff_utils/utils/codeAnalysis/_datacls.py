@@ -37,7 +37,18 @@ class ZASTNode:
         return cls(node_type=node_type, extra_text=extra_text)
 
     def clone(self):
-        return copy.deepcopy(self)
+        # return copy.deepcopy(self)
+        # 创建新节点（复制类型和额外文本）
+        cloned = ZASTNode.from_type(self.type, self.extra_text)
+        cloned.is_named = self.is_named
+
+        # 深度复制所有子节点，并设置父节点
+        for child in self.children:
+            child_clone = child.clone()
+            child_clone.parent = cloned
+            cloned.children.append(child_clone)
+
+        return cloned
 
     def __repr__(self) -> str:
         return f"ZASTNode(type='{self.type}', children={len(self.children)})"

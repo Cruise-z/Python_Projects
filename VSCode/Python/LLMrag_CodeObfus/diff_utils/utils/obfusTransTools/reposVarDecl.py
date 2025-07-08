@@ -110,6 +110,7 @@ def reposVarsDecl(zroot:ZASTNode, lang:str):
             highlight_print(f"varname is: {varName}")
             reposVarDecl(varName, oriDeclNode, lang)
             print_ZASTNode(zroot)
-        except:
+        except Exception as e:
+            highlight_print(f"Failed to process var: {varName}, reason: {e}")
             continue
         

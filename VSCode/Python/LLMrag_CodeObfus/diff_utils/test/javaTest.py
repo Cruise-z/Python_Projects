@@ -3,6 +3,7 @@ import sys
 import os
 import json
 from tqdm import tqdm
+from pyinstrument import Profiler
 
 sys.path.append(os.path.abspath('./diff_utils'))
 from utils import *
@@ -162,16 +163,19 @@ public class test {
     #     print_ZASTNode(initNode)
     # highlight_print(f"ori_decnode is empty: {isempty}")
     # print(f"index of insertion points: {index}")
-    
+
+    profiler = Profiler()
+    profiler.start()
     # reposVarDecl(var[0], var[1], lang)
-    reposVarsDecl(zroot, lang)
+    # reposVarsDecl(zroot, lang)
     
     # whileCondTrans(zroot)
     # updateIncDec(zroot)
     print_ZASTNode(zroot)
     # zjson = zroot.json()
     # print(json.dumps(zjson, indent=2))
-
+    profiler.stop()
+    print(profiler.output_text(unicode=True, color=True))
     
     
     
