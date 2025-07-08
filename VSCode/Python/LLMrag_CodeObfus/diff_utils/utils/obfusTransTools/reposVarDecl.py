@@ -1,6 +1,6 @@
 from ..codeAnalysis.astTrans import *
 from ..format import *
-import random
+import random, time
 
 def reorg_varDecl(varName: str, scopeNode: ZASTNode, oriDeclNode: ZASTNode) -> Tuple[Optional[ZASTNode], Optional[ZASTNode], int, Optional[List[int]], bool]:
     """_summary_
@@ -79,6 +79,7 @@ def reorg_varDecl(varName: str, scopeNode: ZASTNode, oriDeclNode: ZASTNode) -> T
 def reposVarDecl(varName:str, oriDeclNode:ZASTNode, lang:str):
     scopeNode = find_scopeNode(oriDeclNode, lang)
     declNode, splitInitNode, oriInitIdx, index, isempty = reorg_varDecl(varName, scopeNode, oriDeclNode)
+    random.seed(time.time_ns())
     if index:
         if splitInitNode:
             # 说明原语句声明和初始化同时进行

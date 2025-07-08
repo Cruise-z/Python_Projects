@@ -42,7 +42,7 @@ public class example {
             if (z == 5) {
                 z+=1;
             }
-            for (int i = 0; i < 10; i=i+1) {
+            for (i = 0; i < 10; i++) {
                 try{
                     // some code
                 } catch (Exception e) {
@@ -56,9 +56,14 @@ public class example {
         }
         while(1){
             while(true){
-                
+                if (z == 5){
+                    break;
+                }
             }
         }
+        do {
+            z = z++;
+        }while(z != 5);
         return true;
     }
 }

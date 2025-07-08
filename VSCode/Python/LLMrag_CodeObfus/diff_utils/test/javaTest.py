@@ -164,11 +164,11 @@ public class test {
     # print(f"index of insertion points: {index}")
     
     # reposVarDecl(var[0], var[1], lang)
-    # reposVarsDecl(zroot, lang)
+    reposVarsDecl(zroot, lang)
     
     # whileCondTrans(zroot)
     # updateIncDec(zroot)
-    # print_ZASTNode(zroot)
+    print_ZASTNode(zroot)
     # zjson = zroot.json()
     # print(json.dumps(zjson, indent=2))
 
