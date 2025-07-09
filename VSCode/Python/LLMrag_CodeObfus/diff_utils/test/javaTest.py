@@ -129,6 +129,50 @@ public class test {
     }
 }
 """
+
+    code1 = """
+public class LoopExample {
+    public static void main(String[] args) {
+        // 1. basic for loop
+        for (i = 0; i < 5; i=i+1) {
+            System.out.println("For loop: " + i);
+        }
+
+        // 2. enhanced for loop (for-each)
+        int[] numbers = {1, 2, 3};
+        for (int num : numbers) {
+            System.out.println("For-each: " + num);
+        }
+
+        // 3. while loop
+        int count = 0;
+        while (count < 3) {
+            System.out.println("While loop: " + count);
+            count++;
+        }
+
+        // 4. do-while loop
+        int k = 0;
+        do {
+            System.out.println("Do-while: " + k);
+            k++;
+        } while (k < 2);
+    }
+}
+    """
+    
+    code1 = """
+public class LoopExample {
+    public static void main(String[] args) {
+        int count = 0;
+        int k = 0;
+        do {
+            System.out.println("Do-while: " + k);
+            k++;
+        } while (k <= 2);
+    }
+}
+    """
     
     lang = 'java'
     zroot = build_zast(code1, lang)
@@ -168,9 +212,9 @@ public class test {
     profiler.start()
     # reposVarDecl(var[0], var[1], lang)
     # reposVarsDecl(zroot, lang)
-    
     # whileCondTrans(zroot)
     # updateIncDec(zroot)
+    random_loop_conversion(zroot)
     print_ZASTNode(zroot)
     # zjson = zroot.json()
     # print(json.dumps(zjson, indent=2))

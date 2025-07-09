@@ -9,3 +9,4 @@ from .obfusDiffTools.reposVarDecl import *
 from .obfusTransTools.reposVarDecl import *
 from .obfusTransTools.loopCondition import *
 from .obfusTransTools.updateVar import *
+from .obfusTransTools.loopTrans import *

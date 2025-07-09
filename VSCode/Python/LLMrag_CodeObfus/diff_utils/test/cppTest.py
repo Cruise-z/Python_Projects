@@ -76,6 +76,38 @@ public class example {
     #     h = h + 1;
     # }"""
     
+    code1 = """
+void loop_example() {
+    // 1. for loop
+    int i = 3;
+    int j;
+    j = 3;
+    for (i = 0; i < 5; i++) {
+        std::cout << "For loop: " << i << std::endl;
+    }
+
+    // 2. range-based for loop (C++11+)
+    std::vector<int> nums = {1, 2, 3};
+    for (int n : nums) {
+        std::cout << "Range-for: " << n << std::endl;
+    }
+
+    // 3. while loop
+    int count = 0;
+    while (count < 3) {
+        std::cout << "While loop: " << count << std::endl;
+        count++;
+    }
+
+    // 4. do-while loop
+    int k = 0;
+    do {
+        std::cout << "Do-while: " << k << std::endl;
+        k++;
+    } while (k < 2);
+}
+"""
+    
     lang = 'cpp'
     zroot = build_zast(code1, lang)
     print_zast(zroot)
