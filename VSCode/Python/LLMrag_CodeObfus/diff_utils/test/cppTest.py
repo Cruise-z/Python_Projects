@@ -108,6 +108,17 @@ void loop_example() {
 }
 """
     
+    code1 = """
+void loop_example() {
+    int i = 3;
+    int j;
+    j = 3;
+    for (;;) {
+        
+    }
+}
+"""
+    
     lang = 'cpp'
     zroot = build_zast(code1, lang)
     print_zast(zroot)

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, fields, is_dataclass
 from tree_sitter import Node
-from typing import List, Optional, Tuple, Set, Dict
+from typing import List, Optional, Tuple, Set, Dict, Any
 import copy
 
 class ZASTNode:
@@ -148,12 +148,11 @@ class LoopPatterns:
                 {
                     "pattern": [
                         "for", "(", 
-                        {"init": ["local_variable_declaration", ["assignment_expression", ";"]]}, 
-                        {"condition": ["binary_expression"]}, 
-                        ";", 
-                        {"update": ["assignment_expression", "update_expression"]}, 
+                        {"init": [["local_variable_declaration"], ["assignment_expression", ";"], [";"]]}, 
+                        {"condition": [["binary_expression", ";"], [";"]]},  
+                        {"update": [["assignment_expression"], ["update_expression"], None]}, 
                         ")", 
-                        "block"
+                        {"block": [["block"]]}
                     ],
                     "fields": ["init", "condition", "update", "block"]
                 }
@@ -163,7 +162,11 @@ class LoopPatterns:
             ],
             "while_statement": [
                 {
-                    "pattern": ["while", "condition", "block"],
+                    "pattern": [
+                        "while", 
+                        {"condition": [["condition"]]}, 
+                        {"block": [["block"]]}
+                    ],
                     "fields": ["condition", "block"]
                 }
             ],
@@ -171,9 +174,9 @@ class LoopPatterns:
                 {
                     "pattern": [
                         "do", 
-                        "block", 
+                        {"block": [["block"]]}, 
                         "while", 
-                        {"condition": ["parenthesized_expression"]},  
+                        {"condition": [["parenthesized_expression"]]},  
                         ";"
                     ],
                     "fields": ["block", "condition"]
@@ -183,12 +186,15 @@ class LoopPatterns:
         "cpp": {
             "for_statement": [
                 {
-                    "pattern": ["for", "(", {"init": ["declaration"]}, ";", "condition", ";", "update", ")", "compound_statement"],
-                    "fields": ["init", "condition", "update", "compound_statement"]
-                },
-                {
-                    "pattern": ["for", "(", {"init": ["assignment_expression"]}, ";", "condition", ";", "update", ")", "compound_statement"],
-                    "fields": ["init", "condition", "update", "compound_statement"]
+                    "pattern": [
+                        "for", "(", 
+                        {"init": ["declaration", ["assignment_expression", ";"]]}, 
+                        {"condition": [["binary_expression", ";"], ";"]},  
+                        {"update": ["assignment_expression", "update_expression"]}, 
+                        ")", 
+                        "block"
+                    ],
+                    "fields": ["init", "condition", "update", "block"]
                 }
             ],
             "while_statement": [
@@ -218,7 +224,7 @@ class LoopPatterns:
         """
         return self.patterns.get(node_type)
 
-    def match(self, node: ZASTNode, node_type: str) -> Optional[dict]:
+    def match(self, loopNode: ZASTNode, node_type: str) -> Optional[dict]:
         """
         匹配节点是否符合指定类型的循环结构模板，并提取字段
         """
@@ -229,54 +235,61 @@ class LoopPatterns:
         for pattern_info in patterns:
             pattern = pattern_info["pattern"]
             fields = pattern_info["fields"]
-            match_result = self._match_pattern(node, pattern, fields)
+            match_result = self._match_pattern(loopNode, pattern, fields)
             if match_result:
                 # 如果是 while 或 do-while 循环，则需要进一步处理 init 和 update
                 if node_type in ["while_statement", "do_statement"]:
-                    match_result = self._extract_init_update(match_result, node)
+                    match_result = self._extract_init_update(match_result, loopNode)
                 return match_result
         
         return None
 
-    def _match_pattern(self, node: ZASTNode, pattern: List[str], fields: List[str]) -> Optional[dict]:
+    def _match_pattern(self, loopNode: ZASTNode, pattern: list, fields: list) -> Optional[dict]:
         """
-        核心匹配逻辑，检查节点的子结构是否符合 pattern，并提取相应的字段
+        匹配循环节点和指定模式，返回匹配成功的字段
         """
-        children = node.children
-        field_values = {}
-
-        pattern_i = 0
-        child_i = 0
-
-        while pattern_i < len(pattern) and child_i < len(children):
-            expected = pattern[pattern_i]
-            actual_node = children[child_i]
-
-            if isinstance(expected, dict):  # {"init": ["declaration", "assignment_expression"]}
-                key = list(expected.keys())[0]
-                candidates = expected[key]
-                if actual_node.type in candidates:
-                    field_values[key] = actual_node
-                    pattern_i += 1
-                    child_i += 1
+        child_idx = 0
+        matched_fields = {}
+        
+        for pattern_item in pattern:
+            # 如果是普通的字符串类型，直接匹配
+            if isinstance(pattern_item, str):
+                if child_idx < len(loopNode.children) and loopNode.children[child_idx].type == pattern_item:
+                    child_idx += 1  # 匹配成功，继续匹配下一个节点
                 else:
-                    return None
-            elif expected == actual_node.type:
-                field_values[expected] = actual_node
-                pattern_i += 1
-                child_i += 1
-            elif expected in {";", "(", ")", ":", ","} and actual_node.extra_text == expected:
-                pattern_i += 1
-                child_i += 1
+                    return None  # 匹配失败，返回None
+            # 如果是字段匹配（字典形式）
+            elif isinstance(pattern_item, dict):
+                for field_name, options in pattern_item.items():
+                    # 尝试匹配字段的每一个选择项
+                    for option in options:
+                        if option is None:
+                            matched_fields[field_name] = None
+                            break
+                        cnt = 0
+                        matched = True
+                        # 检查当前子节点是否与选项匹配
+                        while cnt < len(option) and child_idx + cnt < len(loopNode.children):
+                            if loopNode.children[child_idx + cnt].type != option[cnt]:
+                                matched = False
+                                break
+                            cnt += 1
+                        if matched:
+                            # 匹配成功，更新该字段，并跳过相应数量的子节点
+                            if loopNode.children[child_idx].type == ';':
+                                matched_fields[field_name] = None
+                            else:
+                                matched_fields[field_name] = loopNode.children[child_idx]
+                            child_idx += cnt  # 跳过已匹配的子节点
+                            break
+                    else:
+                        # 如果所有选择项都不匹配，返回None
+                        return None
             else:
                 return None
 
-        if len(field_values) < len(fields):
-            for field in fields:
-                if field not in field_values:
-                    field_values[field] = None  # optional fallback
-
-        return field_values
+        # 返回匹配成功的字段
+        return {field: matched_fields[field] for field in fields if field in matched_fields}
 
     def _extract_init_update(self, match_result: dict, node: ZASTNode) -> dict:
         """
@@ -288,13 +301,19 @@ class LoopPatterns:
         if not condition_node:
             return match_result
         
+        block_node = match_result.get("block")
+        if not block_node:
+            return match_result
+        
         # 提取 condition 中的变量名（假设是简单的标识符）
         condition_var = self._extract_variable_from_condition(condition_node)
 
+        print(condition_var)
         # 查找 init 和 update
         init_node = self._find_init_node(node, condition_var)
-        update_node = self._find_update_node(node, condition_var)
-        
+        update_node = self._find_update_node(block_node, condition_var)
+        print(init_node)
+        print(update_node)
         # 将 init 和 update 添加到匹配结果中
         if init_node:
             match_result["init"] = init_node
@@ -308,14 +327,25 @@ class LoopPatterns:
         从 condition 节点中提取涉及的变量名
         假设条件是一个二元表达式
         """
+        # 处理括号表达式类型的节点
+        if condition_node.type == "parenthesized_expression":
+            # 获取括号内的子节点
+            condition_node = condition_node.children[1]  # 括号内的内容，通常是二元表达式
+
+        # 现在 condition_node 应该是一个二元表达式类型
         if condition_node.type == "binary_expression":
             left_node = condition_node.children[0]
             right_node = condition_node.children[1]
+
+            # 检查左边和右边的操作数是否为标识符
             if left_node.type == "identifier":
-                print("111111111111111111111111111111"+left_node.extra_text)
+                # print("Found identifier on the left side: " + left_node.extra_text)
                 return left_node.extra_text
             if right_node.type == "identifier":
+                # print("Found identifier on the right side: " + right_node.extra_text)
                 return right_node.extra_text
+
+        # 如果没有找到标识符，则返回空字符串
         return ""
 
     def _find_init_node(self, node: ZASTNode, var_name: str) -> Optional[ZASTNode]:
@@ -323,25 +353,55 @@ class LoopPatterns:
         在循环外查找初始化节点
         这里可以根据变量名在循环外查找变量声明或赋值表达式
         """
+        print("Inspecting node:", node)
+        print("Inspecting node parent:", node.parent)
+        
         for child in node.parent.children:
-            # 确保 child.extra_text 不是 None
-            if child.type in ["local_variable_declaration", "assignment_expression", "declaration"]:
-                if child.extra_text and var_name in child.extra_text:
+            print("Checking child:", child)
+            
+            # 确保 child.extra_text 不是 None，并且 child 是我们关心的节点类型
+            if child.type == "local_variable_declaration":
+                # 查找 variable_declarator 中的 identifier
+                var_declarator = child.children[1]  # 获取 variable_declarator 子节点
+                identifier_node = var_declarator.children[0]  # 获取 identifier 子节点
+                print("Variable name in declaration:", identifier_node.extra_text)
+                
+                # 如果 var_name 与 identifier 节点中的变量名相匹配
+                if var_name == identifier_node.extra_text:
+                    print("Found matching initialization node:", child)
                     return child
+            
+            # 对于 assignment_expression 或 declaration 类型的节点，依旧可以按原逻辑处理
+            elif child.type in ["assignment_expression", "declaration"]:
+                if child.extra_text and var_name == child.extra_text:
+                    print("Found matching assignment or declaration node:", child)
+                    return child
+        
         return None
 
-    def _find_update_node(self, node: ZASTNode, var_name: str) -> Optional[ZASTNode]:
+    def _find_update_node(self, block_node: ZASTNode, var_name: str) -> Optional[ZASTNode]:
         """
         在循环内查找更新节点
         这里可以根据变量名在循环体内查找更新操作
         """
-        for child in node.children:
-            if child.type == "update_expression" and child.extra_text and var_name in child.extra_text:
-                return child
+        for child in block_node.children:
+            # 如果是直接的 update_expression 节点
+            if child.type == "update_expression":
+                # 检查 update_expression 的子节点，看看是否包含与 var_name 匹配的 identifier
+                for inner_child in child.children:
+                    if inner_child.type == "identifier" and inner_child.extra_text == var_name:
+                        print(f"Found update expression directly: {inner_child.extra_text}")
+                        return child
+            
+            # 如果是包含更新表达式的 expression_statement
             elif child.type == "expression_statement":
                 for inner_child in child.children:
-                    if inner_child.type == "update_expression" and inner_child.extra_text and var_name in inner_child.extra_text:
-                        return inner_child
+                    if inner_child.type == "update_expression":
+                        # 检查 update_expression 的子节点，看看是否包含与 var_name 匹配的 identifier
+                        for innermost_child in inner_child.children:
+                            if innermost_child.type == "identifier" and innermost_child.extra_text == var_name:
+                                print(f"Found update expression inside expression statement: {innermost_child.extra_text}")
+                                return inner_child
         return None
 
     def __repr__(self):

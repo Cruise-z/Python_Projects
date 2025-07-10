@@ -158,35 +158,35 @@ def random_loop_conversion(zast_tree: ZASTNode, lang: str = "java") -> ZASTNode:
                 # 使用 LoopPatterns 匹配并提取字段
                 match = adapter.match(child, "for_statement")
                 print_matched_fields(match)
-                if match:
-                    # highlight_print("111111111")
-                    # 随机选择转化为 while 或 do
-                    new_node = random.choice([convert_for_to_while(child, lang), convert_for_to_do(child, lang)])
-                    # 替换原循环节点
-                    node.children.remove(child)
-                    node.children.append(new_node)
+                # if match:
+                #     # highlight_print("111111111")
+                #     # 随机选择转化为 while 或 do
+                #     new_node = random.choice([convert_for_to_while(child, lang), convert_for_to_do(child, lang)])
+                #     # 替换原循环节点
+                #     node.children.remove(child)
+                #     node.children.append(new_node)
 
             elif child.type == "while_statement":
                 # 使用 LoopPatterns 匹配并提取字段
                 match = adapter.match(child, "while_statement")
                 print_matched_fields(match)
-                if match:
-                    # 随机选择转化为 for 或 do
-                    new_node = random.choice([convert_while_to_for(child, lang), convert_while_to_do(child, lang)])
-                    # 替换原循环节点
-                    node.children.remove(child)
-                    node.children.append(new_node)
+                # if match:
+                #     # 随机选择转化为 for 或 do
+                #     new_node = random.choice([convert_while_to_for(child, lang), convert_while_to_do(child, lang)])
+                #     # 替换原循环节点
+                #     node.children.remove(child)
+                #     node.children.append(new_node)
 
             elif child.type == "do_statement":
                 # 使用 LoopPatterns 匹配并提取字段
                 match = adapter.match(child, "do_statement")
                 print_matched_fields(match)
-                if match:
-                    # 随机选择转化为 for 或 while
-                    new_node = convert_do_to_while(child, lang)
-                    # 替换原循环节点
-                    node.children.remove(child)
-                    node.children.append(new_node)
+                # if match:
+                #     # 随机选择转化为 for 或 while
+                #     new_node = convert_do_to_while(child, lang)
+                #     # 替换原循环节点
+                #     node.children.remove(child)
+                #     node.children.append(new_node)
 
             # 递归遍历子节点
             traverse_and_convert(child)
@@ -207,12 +207,6 @@ def print_matched_fields(match: dict):
         for field, node in match.items():
             if node:
                 print(f"Field: {field}, Node Type: {node.type}")
-            # if node.children:
-            #     print(f"  Children:")
-            #     for child_node in node.children:
-            #         print(f"    {child_node.type}")
-            # else:
-            #     print(f"  No children")
-            print_ZASTNode(node)
+                print_ZASTNode(node)
     else:
         print("No match found.")

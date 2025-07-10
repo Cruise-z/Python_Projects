@@ -164,12 +164,11 @@ public class LoopExample {
     code1 = """
 public class LoopExample {
     public static void main(String[] args) {
-        int count = 0;
         int k = 0;
         do {
             System.out.println("Do-while: " + k);
             k++;
-        } while (k <= 2);
+        } while (k < 2);
     }
 }
     """
@@ -208,18 +207,18 @@ public class LoopExample {
     # highlight_print(f"ori_decnode is empty: {isempty}")
     # print(f"index of insertion points: {index}")
 
-    profiler = Profiler()
-    profiler.start()
+    # profiler = Profiler()
+    # profiler.start()
     # reposVarDecl(var[0], var[1], lang)
     # reposVarsDecl(zroot, lang)
     # whileCondTrans(zroot)
     # updateIncDec(zroot)
     random_loop_conversion(zroot)
-    print_ZASTNode(zroot)
+    # print_ZASTNode(zroot)
     # zjson = zroot.json()
     # print(json.dumps(zjson, indent=2))
-    profiler.stop()
-    print(profiler.output_text(unicode=True, color=True))
+    # profiler.stop()
+    # print(profiler.output_text(unicode=True, color=True))
     
     
     
