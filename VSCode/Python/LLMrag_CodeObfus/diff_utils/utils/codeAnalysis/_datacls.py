@@ -74,6 +74,93 @@ class ZASTNode:
 
         return json_node
 
+class LanguageASTMapper:
+    def __init__(self, language: str):
+        """
+        初始化时指定语言类型，并设置相应的字段名与节点类型的映射。
+        :param language: 编程语言类型，如 'java', 'cpp', 'python', 'javascript'
+        """
+        self.language = language.lower()
+        
+        # 定义不同语言的映射字典
+        self.mapping = {
+            "java": {
+                "variable_declaration": "local_variable_declaration",
+                "expression": "expression_statement",
+                "assignment": "assignment_expression",
+                "if_statement": "if_statement",
+                "for_statement": "for_statement",
+                "while_statement": "while_statement",
+                "do_statement": "do_statement",
+                "method_declaration": "method_declaration",
+                "return_statement": "return_statement",
+                "class_declaration": "class_declaration",
+                "try_statement": "try_statement",
+                "import_declaration": "import_declaration"
+            },
+            "cpp": {
+                "variable_declaration": "declaration",
+                "expression": "expression_statement",
+                "assignment": "assignment_expression",
+                "if_statement": "if_statement",
+                "for_statement": "for_statement",
+                "while_statement": "while_statement",
+                "do_statement": "do_statement",
+                "function_definition": "function_definition",
+                "return_statement": "return_statement",
+                "class_declaration": "class_declaration",
+                "try_statement": "try_statement",
+                "import_declaration": "import_declaration"
+            },
+            "python": {
+                "variable_declaration": "Assign",
+                "assignment": "Assign",
+                "if_statement": "If",
+                "while_statement": "While",
+                "for_statement": "For",
+                "function_definition": "FunctionDef",
+                "return_statement": "Return",
+                "class_declaration": "ClassDef",
+                "try_statement": "Try",
+                "import_declaration": "Import",
+                "expression": "Expr",
+                "lambda_expression": "Lambda",
+                "binary_expression": "BinOp",
+                "unary_expression": "UnaryOp",
+                "list_comprehension": "ListComp",
+                "dict_comprehension": "DictComp",
+                "generator_expression": "GeneratorExp"
+            },
+            "javascript": {
+                "variable_declaration": "variable_declaration",
+                "assignment": "assignment_expression",
+                "if_statement": "if_statement",
+                "for_statement": "for_statement",
+                "while_statement": "while_statement",
+                "function_definition": "function_declaration",
+                "return_statement": "return_statement",
+                "class_declaration": "class_declaration",
+                "try_statement": "try_statement",
+                "import_declaration": "import_declaration"
+            }
+        }
+
+        # 确保传入的语言在字典中有效
+        if self.language not in self.mapping:
+            raise ValueError(f"Unsupported language: {language}")
+
+        # 设置该语言对应的映射
+        self.language_mapping = self.mapping[self.language]
+
+    def getType(self, field_name: str) -> str:
+        """
+        根据字段名，返回相应的节点类型。
+        :param field_name: 字段名，如 'variable_declaration', 'if_statement'
+        :return: 对应的 AST 节点类型，若没有找到，返回 'Not Found'
+        在执行转换时，需要查看
+        """
+        # 查找并返回对应的节点类型
+        return self.language_mapping.get(field_name.lower(), "Not Found")
 
 @dataclass
 class ScopeRule:
@@ -188,11 +275,11 @@ class LoopPatterns:
                 {
                     "pattern": [
                         "for", "(", 
-                        {"init": ["declaration", ["assignment_expression", ";"]]}, 
-                        {"condition": [["binary_expression", ";"], ";"]},  
-                        {"update": ["assignment_expression", "update_expression"]}, 
+                        {"init": [["declaration"], ["assignment_expression", ";"]]}, 
+                        {"condition": [["binary_expression", ";"], [";"]]},  
+                        {"update": [["assignment_expression"], ["update_expression"]]}, 
                         ")", 
-                        "block"
+                        {"block": [["compound_statement"]]}
                     ],
                     "fields": ["init", "condition", "update", "block"]
                 }
@@ -205,8 +292,14 @@ class LoopPatterns:
             ],
             "do_statement": [
                 {
-                    "pattern": ["do", "compound_statement", "while", "(", "condition", ")", ";"],
-                    "fields": ["compound_statement", "condition"]
+                    "pattern": [
+                        "do", 
+                        {"block": [["compound_statement"]]}, 
+                        "while", 
+                        {"condition": [["parenthesized_expression"]]}, 
+                        ";"
+                    ],
+                    "fields": ["block", "condition"]
                 }
             ]
         }
@@ -232,13 +325,14 @@ class LoopPatterns:
         if not patterns:
             return None
 
+        mapper = LanguageASTMapper(self.lang)
         for pattern_info in patterns:
             pattern = pattern_info["pattern"]
             fields = pattern_info["fields"]
             match_result = self._match_pattern(loopNode, pattern, fields)
             if match_result:
                 # 如果是 while 或 do-while 循环，则需要进一步处理 init 和 update
-                if node_type in ["while_statement", "do_statement"]:
+                if node_type in [mapper.getType("while_statement"), mapper.getType("do_statement")]:
                     match_result = self._extract_init_update(match_result, loopNode)
                 return match_result
         
@@ -305,10 +399,9 @@ class LoopPatterns:
         if not block_node:
             return match_result
         
-        # 提取 condition 中的变量名（假设是简单的标识符）
+        # 提取 condition 中的变量名
         condition_var = self._extract_variable_from_condition(condition_node)
-
-        print(condition_var)
+        print("condition var is:"+condition_var)
         # 查找 init 和 update
         init_node = self._find_init_node(node, condition_var)
         update_node = self._find_update_node(block_node, condition_var)
@@ -324,84 +417,90 @@ class LoopPatterns:
 
     def _extract_variable_from_condition(self, condition_node: ZASTNode) -> str:
         """
-        从 condition 节点中提取涉及的变量名
-        假设条件是一个二元表达式
+        递归查找 condition_node 中所有的 'binary_expression' 节点，
+        并提取涉及的变量名（标识符）。
         """
-        # 处理括号表达式类型的节点
-        if condition_node.type == "parenthesized_expression":
-            # 获取括号内的子节点
-            condition_node = condition_node.children[1]  # 括号内的内容，通常是二元表达式
-
-        # 现在 condition_node 应该是一个二元表达式类型
+        # 1. 如果当前节点是二元表达式类型
         if condition_node.type == "binary_expression":
             left_node = condition_node.children[0]
             right_node = condition_node.children[1]
 
-            # 检查左边和右边的操作数是否为标识符
+            # 2. 检查左边和右边的子节点是否为标识符
             if left_node.type == "identifier":
-                # print("Found identifier on the left side: " + left_node.extra_text)
-                return left_node.extra_text
-            if right_node.type == "identifier":
-                # print("Found identifier on the right side: " + right_node.extra_text)
-                return right_node.extra_text
+                return left_node.extra_text  # 返回左边的标识符
 
-        # 如果没有找到标识符，则返回空字符串
+            if right_node.type == "identifier":
+                return right_node.extra_text  # 返回右边的标识符
+
+        # 3. 如果当前节点不是二元表达式，递归检查它的所有子节点
+        for child in condition_node.children:
+            result = self._extract_variable_from_condition(child)
+            if result:  # 如果递归返回了标识符，直接返回
+                return result
+
+        # 4. 如果没有找到标识符，返回空字符串
         return ""
 
     def _find_init_node(self, node: ZASTNode, var_name: str) -> Optional[ZASTNode]:
         """
-        在循环外查找初始化节点
+        在循环外查找初始化节点，找到离 node 最近的节点
         这里可以根据变量名在循环外查找变量声明或赋值表达式
+        !可能需要进一步改进
         """
+        mapper = LanguageASTMapper(self.lang)
         print("Inspecting node:", node)
         print("Inspecting node parent:", node.parent)
-        
-        for child in node.parent.children:
+
+        # 找到 node 在父节点中的索引位置
+        node_index = node.parent.children.index(node)
+        closest_init_node = None
+
+        # 从 node_index-1 开始逆序遍历父节点的子节点，检查每个子节点
+        for i in range(node_index - 1, -1, -1):  # 逆序遍历，直到第一个节点
+            child = node.parent.children[i]
             print("Checking child:", child)
-            
+
             # 确保 child.extra_text 不是 None，并且 child 是我们关心的节点类型
-            if child.type == "local_variable_declaration":
+            if child.type == mapper.getType("variable_declaration"):
                 # 查找 variable_declarator 中的 identifier
-                var_declarator = child.children[1]  # 获取 variable_declarator 子节点
-                identifier_node = var_declarator.children[0]  # 获取 identifier 子节点
+                assignment = child.children[1]  # 获取 variable_declarator 子节点
+                identifier_node = assignment.children[0]  # 获取 identifier 子节点
                 print("Variable name in declaration:", identifier_node.extra_text)
-                
+
                 # 如果 var_name 与 identifier 节点中的变量名相匹配
                 if var_name == identifier_node.extra_text:
                     print("Found matching initialization node:", child)
-                    return child
-            
-            # 对于 assignment_expression 或 declaration 类型的节点，依旧可以按原逻辑处理
-            elif child.type in ["assignment_expression", "declaration"]:
-                if child.extra_text and var_name == child.extra_text:
-                    print("Found matching assignment or declaration node:", child)
-                    return child
-        
-        return None
+                    closest_init_node = child  # 记录找到的节点
+                    break  # 找到最近的节点后立即停止遍历
+            elif child.type == mapper.getType("expression"):
+                # 查找 variable_declarator 中的 identifier
+                assignment = child.children[0]  # 获取 variable_declarator 子节点
+                if assignment.type == mapper.getType("assignment"):
+                    identifier_node = assignment.children[0]  # 获取 identifier 子节点
+                    print("Variable name in expression:", identifier_node.extra_text)
+
+                    # 如果 var_name 与 identifier 节点中的变量名相匹配
+                    if var_name == identifier_node.extra_text:
+                        print("Found matching initialization node:", child)
+                        closest_init_node = child  # 记录找到的节点
+                        break  # 找到最近的节点后立即停止遍历
+        # 返回找到的最接近的初始化节点
+        return closest_init_node
 
     def _find_update_node(self, block_node: ZASTNode, var_name: str) -> Optional[ZASTNode]:
         """
         在循环内查找更新节点
         这里可以根据变量名在循环体内查找更新操作
         """
-        for child in block_node.children:
-            # 如果是直接的 update_expression 节点
-            if child.type == "update_expression":
-                # 检查 update_expression 的子节点，看看是否包含与 var_name 匹配的 identifier
-                for inner_child in child.children:
-                    if inner_child.type == "identifier" and inner_child.extra_text == var_name:
-                        print(f"Found update expression directly: {inner_child.extra_text}")
-                        return child
-            
+        mapper = LanguageASTMapper(self.lang)
+        for child in reversed(block_node.children):
             # 如果是包含更新表达式的 expression_statement
-            elif child.type == "expression_statement":
-                for inner_child in child.children:
-                    if inner_child.type == "update_expression":
-                        # 检查 update_expression 的子节点，看看是否包含与 var_name 匹配的 identifier
-                        for innermost_child in inner_child.children:
-                            if innermost_child.type == "identifier" and innermost_child.extra_text == var_name:
-                                print(f"Found update expression inside expression statement: {innermost_child.extra_text}")
-                                return inner_child
+            if child.type == mapper.getType("expression"):
+                update = child.children[0]
+                for update_child in update.children:
+                    if update_child.type == "identifier" and update_child.extra_text == var_name:
+                        print(f"Found update expression inside expression statement: {update_child.extra_text}")
+                        return update
         return None
 
     def __repr__(self):

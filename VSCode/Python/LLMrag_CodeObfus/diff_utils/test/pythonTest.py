@@ -162,21 +162,19 @@ public class LoopExample {
     """
     
     code1 = """
-public class LoopExample {
-    public static void main(String[] args) {
-        int k = 0;
-        k = 5;
-        do {
-            System.out.println("Do-while: " + k);
-            k = 8;
-            k = k+5;
-        } while (k < 2);
-        k = 5;
-    }
-}
+def while_loop_example():
+    # 初始化计数器
+    count = 0
+
+    # 当 count 小于 5 时继续执行循环
+    while count < 5:
+        print(f"Count is: {count}")  # 打印当前的 count 值
+        count += 1  # 增加计数器
+
+    print("Loop finished!")
     """
     
-    lang = 'java'
+    lang = 'python'
     zroot = build_zast(code1, lang)
     print_zast(zroot)
     

@@ -140,7 +140,7 @@ def convert_while_to_do(while_node: ZASTNode, lang: str = "java") -> ZASTNode:
     return do_node
 
 
-def random_loop_conversion(zast_tree: ZASTNode, lang: str = "java") -> ZASTNode:
+def random_loop_conversion(zast_tree: ZASTNode, lang: str) -> ZASTNode:
     """
     随机将 ZAST 树中的所有循环结构转换为其他两种循环类型之一
     """
