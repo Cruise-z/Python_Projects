@@ -96,7 +96,9 @@ class LanguageASTMapper:
                 "return_statement": "return_statement",
                 "class_declaration": "class_declaration",
                 "try_statement": "try_statement",
-                "import_declaration": "import_declaration"
+                "import_declaration": "import_declaration",
+                "while_condition": "condition",
+                "dowhile_condition": "parenthesized_expression",
             },
             "cpp": {
                 "variable_declaration": "declaration",
@@ -110,7 +112,9 @@ class LanguageASTMapper:
                 "return_statement": "return_statement",
                 "class_declaration": "class_declaration",
                 "try_statement": "try_statement",
-                "import_declaration": "import_declaration"
+                "import_declaration": "import_declaration",
+                "while_condition": "condition_clause",
+                "dowhile_condition": "parenthesized_expression",
             },
             "python": {
                 "variable_declaration": "Assign",
@@ -286,8 +290,12 @@ class LoopPatterns:
             ],
             "while_statement": [
                 {
-                    "pattern": ["while", "condition_clause", "compound_statement"],
-                    "fields": ["condition_clause", "compound_statement"]
+                    "pattern": [
+                        "while", 
+                        {"condition": [["condition_clause"]]}, 
+                        {"block": [["compound_statement"]]}
+                    ],
+                    "fields": ["condition", "block"]
                 }
             ],
             "do_statement": [
@@ -385,7 +393,7 @@ class LoopPatterns:
         # 返回匹配成功的字段
         return {field: matched_fields[field] for field in fields if field in matched_fields}
 
-    def _extract_init_update(self, match_result: dict, node: ZASTNode) -> dict:
+    def _extract_init_update(self, match_result: dict, loopNode: ZASTNode) -> dict:
         """
         在 while 或 do-while 循环中提取 init 和 update 部分
         1. 从 condition 提取变量名
@@ -403,10 +411,11 @@ class LoopPatterns:
         condition_var = self._extract_variable_from_condition(condition_node)
         print("condition var is:"+condition_var)
         # 查找 init 和 update
-        init_node = self._find_init_node(node, condition_var)
+        init_node = self._find_init_node(loopNode, condition_var)
         update_node = self._find_update_node(block_node, condition_var)
-        print(init_node)
-        print(update_node)
+        # 删除对应的 init 和 update
+        loopNode.parent.children.remove(init_node)
+        block_node.children.remove(update_node)
         # 将 init 和 update 添加到匹配结果中
         if init_node:
             match_result["init"] = init_node
@@ -441,23 +450,23 @@ class LoopPatterns:
         # 4. 如果没有找到标识符，返回空字符串
         return ""
 
-    def _find_init_node(self, node: ZASTNode, var_name: str) -> Optional[ZASTNode]:
+    def _find_init_node(self, loopNode: ZASTNode, var_name: str) -> Optional[ZASTNode]:
         """
         在循环外查找初始化节点，找到离 node 最近的节点
         这里可以根据变量名在循环外查找变量声明或赋值表达式
         !可能需要进一步改进
         """
         mapper = LanguageASTMapper(self.lang)
-        print("Inspecting node:", node)
-        print("Inspecting node parent:", node.parent)
+        print("Inspecting node:", loopNode)
+        print("Inspecting node parent:", loopNode.parent)
 
         # 找到 node 在父节点中的索引位置
-        node_index = node.parent.children.index(node)
+        node_index = loopNode.parent.children.index(loopNode)
         closest_init_node = None
 
         # 从 node_index-1 开始逆序遍历父节点的子节点，检查每个子节点
         for i in range(node_index - 1, -1, -1):  # 逆序遍历，直到第一个节点
-            child = node.parent.children[i]
+            child = loopNode.parent.children[i]
             print("Checking child:", child)
 
             # 确保 child.extra_text 不是 None，并且 child 是我们关心的节点类型
@@ -500,7 +509,7 @@ class LoopPatterns:
                 for update_child in update.children:
                     if update_child.type == "identifier" and update_child.extra_text == var_name:
                         print(f"Found update expression inside expression statement: {update_child.extra_text}")
-                        return update
+                        return child
         return None
 
     def __repr__(self):

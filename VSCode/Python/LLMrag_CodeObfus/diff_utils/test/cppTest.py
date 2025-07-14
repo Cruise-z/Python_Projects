@@ -111,13 +111,9 @@ void loop_example() {
     code1 = """
 void loop_example() {
     // int k = 0;
-    k = 5;
-    do {
-        std::cout << "Do-while: " << k << std::endl;
-        k++;
-        k = k+5;
-    } while (k < 2);
-    k = 6;
+    for (i = 0; i < 5; i++) {
+        std::cout << "For loop: " << i << std::endl;
+    }
 }
 """
     
@@ -161,7 +157,7 @@ void loop_example() {
     # whileCondTrans(zroot)
     # updateIncDec(zroot)
     random_loop_conversion(zroot, lang)
-    # print_ZASTNode(zroot)
+    print_ZASTNode(zroot)
     # zjson = zroot.json()
     # print(json.dumps(zjson, indent=2))
 

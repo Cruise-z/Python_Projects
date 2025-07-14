@@ -164,14 +164,9 @@ public class LoopExample {
     code1 = """
 public class LoopExample {
     public static void main(String[] args) {
-        int k = 0;
-        k = 5;
-        do {
-            System.out.println("Do-while: " + k);
-            k = 8;
-            k = k+5;
-        } while (k < 2);
-        k = 5;
+        for (i = 0; i < 5; i=i+1) {
+            System.out.println("For loop: " + i);
+        }
     }
 }
     """
@@ -217,7 +212,7 @@ public class LoopExample {
     # whileCondTrans(zroot)
     # updateIncDec(zroot)
     random_loop_conversion(zroot, lang)
-    # print_ZASTNode(zroot)
+    print_ZASTNode(zroot)
     # zjson = zroot.json()
     # print(json.dumps(zjson, indent=2))
     # profiler.stop()

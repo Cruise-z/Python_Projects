@@ -1,5 +1,5 @@
 from ._datacls import *
-from .funcReg import register
+from ..codeAnalysis.funcReg import register
 from ..codeAnalysis.ast2inf import *
 from ..codeAnalysis.infProcess import *
 from ..format import *
