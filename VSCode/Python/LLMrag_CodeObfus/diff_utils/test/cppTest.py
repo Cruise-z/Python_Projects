@@ -111,8 +111,10 @@ void loop_example() {
     code1 = """
 void loop_example() {
     // int k = 0;
-    for (i = 0; i < 5; i++) {
-        std::cout << "For loop: " << i << std::endl;
+    int count = 0;
+    while (count < 3) {
+        std::cout << "While loop: " << count << std::endl;
+        count++;
     }
 }
 """

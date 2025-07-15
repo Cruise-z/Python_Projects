@@ -164,8 +164,10 @@ public class LoopExample {
     code1 = """
 public class LoopExample {
     public static void main(String[] args) {
-        for (i = 0; i < 5; i=i+1) {
-            System.out.println("For loop: " + i);
+        int count = 0;
+        while (count < 3) {
+            System.out.println("While loop: " + count);
+            count++;
         }
     }
 }
