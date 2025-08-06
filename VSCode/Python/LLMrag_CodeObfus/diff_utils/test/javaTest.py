@@ -169,6 +169,11 @@ public class LoopExample {
             System.out.println("While loop: " + count);
             count++;
         }
+        int k = 0;
+        do {
+            System.out.println("Do-while: " + k);
+            k++;
+        } while (k < 2);
     }
 }
     """
