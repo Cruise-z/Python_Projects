@@ -16,7 +16,7 @@ import requests
 '''
 
 # 非流式响应
-def openai_api(Client: Client, Model: Model, messages: list):
+def openai_api(Client: Client, Model: Model, messages: list) -> str:
     """为提供的对话消息创建新的回答
 
     Args:
@@ -25,8 +25,12 @@ def openai_api(Client: Client, Model: Model, messages: list):
     Client.CheckModel(Model)
     completion = (Client.openai_client).chat.completions.create(model=Model.value, messages=messages)
     print(completion.choices[0].message.content)
+    if completion.choices[0].message.content is None:
+        return ""
+    else:
+        return str(completion.choices[0].message.content)
 
-def openai_api_stream(Client: Client, Model: Model, messages: list):
+def openai_api_stream(Client: Client, Model: Model, messages: list) -> str:
     """为提供的对话消息创建新的回答 (流式传输)
 
     Args:
@@ -171,7 +175,7 @@ def delete_cache_kimi(Client:Client, cache_id:str):
     else:
         print(f"Failed to delete cache: {response.status_code}, {response.text}") 
 
-def files_chat(Client:Client, Model:Model, filePaths:list[str], Messages:list[str], StreamMode:bool, cache_tag:Optional[str] = None):
+def files_chat(Client:Client, Model:Model, filePaths:list[str], Messages:list[str], StreamMode:bool, cache_tag:Optional[str] = None) -> str:
     messages = []
     messages.append(*upload_files(Client, filePaths, cache_tag=cache_tag))
     for Message in Messages:
@@ -181,7 +185,7 @@ def files_chat(Client:Client, Model:Model, filePaths:list[str], Messages:list[st
         else: # 非流式调用
             return openai_api(Client, Model, messages)
 
-def common_chat(Client:Client, Model:Model, Messages:list, StreamMode:bool, cache_tag:Optional[str] = None):
+def common_chat(Client:Client, Model:Model, Messages:list, StreamMode:bool, cache_tag:Optional[str] = None) -> str:
     messages = []
     if cache_tag:
         messages.append({
