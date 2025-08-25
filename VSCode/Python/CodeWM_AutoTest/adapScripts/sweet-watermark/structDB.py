@@ -238,8 +238,8 @@ def retrieve_reference(
 build_knowledge_base("./projectDev_java.jsonl")
 
 # 查询
-query = "snake game"
-hits = retrieve_reference(query, top_k=1)
-for h in hits:
-    print(h["rank"], h["route"], h["task_name"], h["score"])
-    print(h["reference"])
+# query = "snake game"
+# hits = retrieve_reference(query, top_k=1)
+# for h in hits:
+#     print(h["rank"], h["route"], h["task_name"], h["score"])
+#     print(h["reference"])

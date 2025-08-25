@@ -34,8 +34,8 @@ retriever = FunctionRetriever(retrieve_reference)
 # 3) 编排器
 rag_gen = RagConstrainedGenerator(engine, retriever)
 
-prompt = "Task: use java Create a snake game ..."
-prefix = "package correct;\nimport javax.swing.*; ..."
+prompt = "Task: Brick breaker game\nPrompt:use java Create a brick breaker game\nrequirements:\n• Game Board:\n⋄ Create a game board with a grid-based layout.\n..."
+prefix = "package correct;\n\nimport javax.swing.*;\nimport java.awt.*;\nimport java.awt.event.ActionEvent;\nimport java.awt.event.ActionListener;\nimport java.awt.event.KeyEvent;\nimport java.awt.event.KeyListener;\nimport java.util.ArrayList;\nimport java.util.Random;\n\npublic class BrickBreakerGame extends JPanel implements ActionListener, KeyListener {\n"
 
 # A) 自适应软约束（推荐，等效硬夹紧但形式“软”）：
 res = rag_gen.generate(
@@ -57,6 +57,8 @@ res = rag_gen.generate(
     # watermark_processor = None,
     watermark_processor=sweet_processor  # 这里可换成你自己的水印 Processor
 )
+print(res["rag_meta"]["rank"], res["rag_meta"]["route"], res["rag_meta"]["task_name"], res["rag_meta"]["score"])
+print(res["rag_meta"]["reference"])
 print(res["route"], res["exact_match"], len(res["text"]))
 print(res["text"])
 
