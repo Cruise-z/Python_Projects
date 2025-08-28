@@ -39,11 +39,11 @@
 
 ### 代码测试
 #### 构建代码依赖
-执行：`python ./1_Availability/DT/autoConfig.py --filepath [CodePath]`命令
+执行：`python ./1_Availability/DT/dockerTest/autoConfig.py --filepath [CodePath]`命令
 #### 进行`docker`测试
-执行：`./1_Availability/DT/test.sh [CodePath]`命令
+执行：`./1_Availability/DT/dockerTest/test.sh [CodePath]`命令
 e.g:
-`./1_Availability/DT/test.sh /home/zrz/Projects/GitRepo/Repo/Python_Projects/VSCode/Python/CodeWM_AutoTest/results/stdDemo/SnakeGame/SnakeGame.java`
+`./1_Availability/DT/dockerTest/test.sh /home/zrz/Projects/GitRepo/Repo/Python_Projects/VSCode/Python/CodeWM_AutoTest/results/stdDemo/SnakeGame/SnakeGame.java`
 
 #### Tips: 
 建议每次关掉docker容器重新进行测试时，将上次使用的容器删除，重新执行如下操作：
