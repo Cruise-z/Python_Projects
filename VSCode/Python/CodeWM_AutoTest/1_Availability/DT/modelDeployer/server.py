@@ -15,8 +15,21 @@ import os
 # SERVER_DO_SAMPLE: "1"/"true" 开启采样；"0"/"false" 走贪心。默认开启。
 def _as_bool(x: str) -> bool:
     return str(x).strip().lower() not in ("0", "false", "no", "off", "")
-
 SERVER_DO_SAMPLE = _as_bool(os.getenv("SERVER_DO_SAMPLE", "1"))
+# SAMPLING_MODE: "lenient_openai" | "map_to_greedy" | "strict"
+# 详见 normalize_sampling_args() 说明。默认 "lenient_openai"。
+def _as_mode(x: str) -> str:
+    """把字符串归一化到 {'lenient_openai','map_to_greedy','strict'} 三者之一。"""
+    s = str(x or "").strip().lower().replace("-", "_")
+    if s in ("lenient_openai", "lenient", "openai", "lo"):
+        return "lenient_openai"
+    if s in ("map_to_greedy", "map2greedy", "to_greedy", "greedy_map", "mg"):
+        return "map_to_greedy"
+    if s in ("strict", "error", "raise", "s"):
+        return "strict"
+    # 不认识就回退到宽松模式
+    return "lenient_openai"
+SAMPLING_MODE = _as_mode(os.getenv("SAMPLING_MODE", "lenient_openai"))
 
 # ================= 模型加载（默认不启用任何内置水印） =================
 MODEL_ID = "Qwen/Qwen2.5-Coder-32B-Instruct"
@@ -79,12 +92,12 @@ try:
     here = os.path.dirname(os.path.abspath(__file__))
     if here not in sys.path:
         sys.path.insert(0, here)
-    importlib.import_module("uiAPI")  # 其中应在顶层调用 register_xxx 完成注册
+    importlib.import_module("regWM")  # 其中应在顶层调用 register_xxx 完成注册
     print("[server] processors loaded ->",
           "internal:", list(INTERNAL_PROCESSORS.keys()),
           "external:", list(EXTERNAL_PROCESSORS.keys()))
 except Exception as e:
-    print(f"[server] uiAPI not loaded: {e}")
+    print(f"[server] regWM not loaded: {e}")
 
 # ================== OpenAI 兼容请求/响应模型 ==================
 class Message(BaseModel):
@@ -108,6 +121,37 @@ class ChatRequest(BaseModel):
     
     # —— 隐藏开关：不出现在 schema，客户端也传不进来 —— #
     _do_sample: bool = PrivateAttr(default=SERVER_DO_SAMPLE)
+
+# 归一处理传入参数
+def normalize_sampling_args(do_sample: bool,
+                            temperature: Optional[float],
+                            top_p: Optional[float],
+                            mode: str = SAMPLING_MODE):
+    """
+    mode:
+      - "lenient_openai": do_sample=True 且 temp<=0 → temp=1e-4；do_sample=False → temp=1.0, top_p=1.0
+      - "map_to_greedy":  do_sample=True 且 temp<=0 → do_sample=False（转贪心）
+      - "strict":         do_sample=True 且 temp<=0 → raise ValueError
+    """
+    if not do_sample:
+        return False, 1.0, 1.0
+
+    t = 1.0 if temperature is None else float(temperature)
+    p = 1.0 if top_p is None else float(top_p)
+
+    if t <= 0:
+        if mode == "lenient_openai":
+            t = 1e-4
+        elif mode == "map_to_greedy":
+            return False, 1.0, 1.0
+        else:  # "strict"
+            raise ValueError("temperature must be > 0 when do_sample=True")
+
+    # 约束 top_p ∈ (0,1]
+    if not (0 < p <= 1.0):
+        p = 1.0
+
+    return True, t, p
 
 app = FastAPI()
 
@@ -138,17 +182,24 @@ def _gen_once(
     do_sample: Optional[bool] = None,
 ) -> str:
     _do_sample = SERVER_DO_SAMPLE if do_sample is None else bool(do_sample)
-    # 不采样时，忽略采样相关参数，保持纯贪心行为
+    # 归一化采样参数
+    _do_sample, temperature, top_p = normalize_sampling_args(_do_sample, temperature, top_p)
+
     gen_kwargs = dict(
         do_sample=_do_sample,
+        temperature=temperature,
+        top_p=top_p,
         max_new_tokens=max_tokens,
         logits_processor=logits_processor,
     )
-    if _do_sample:
-        gen_kwargs.update(temperature=temperature, top_p=top_p)
 
     out = model.generate(**inputs, **gen_kwargs)
-    return _decode(out, inputs["input_ids"].shape[1])
+    # 计算token数
+    prompt_tok = int(inputs["input_ids"].shape[1])
+    comp_tok = int(out.shape[1] - prompt_tok)
+    total_tok = prompt_tok + comp_tok
+    
+    return _decode(out, inputs["input_ids"].shape[1]), prompt_tok, comp_tok, total_tok
 
 @torch.inference_mode()
 def _dual_sync_generate_internal_base(
@@ -184,6 +235,8 @@ def _dual_sync_generate_internal_base(
     cur_attn = attn.repeat(2, 1).contiguous()      # [2, L]
     prompt_len = input_ids.shape[1]
 
+    # 归一化采样参数
+    do_sample, temperature, top_p = normalize_sampling_args(do_sample, temperature, top_p)
     # 采样 warpers（温度 / top-p）
     warpers = LogitsProcessorList([])
     if do_sample:
@@ -278,7 +331,13 @@ def _dual_sync_generate_internal_base(
             break
 
     texts = tokenizer.batch_decode(cur_ids[:, prompt_len:], skip_special_tokens=True)
-    return texts[0], texts[1]
+    # 计算token数
+    prompt_tok = int(inputs["input_ids"].shape[1])
+    comp_tok_each = int(new_tokens) # 每路新生成 token 个数就是 new_tokens
+    comp_tok_sum = comp_tok_each * 2 # 如果你想按 OpenAI 习惯统计“所有 choice 的总和”，就乘以 choice 数量（这里是 2）
+    total_tok = prompt_tok + comp_tok_sum
+    
+    return texts[0], texts[1], prompt_tok, comp_tok_sum, total_tok
 
 @app.post("/v1/chat/completions")
 async def chat(req: ChatRequest) -> Dict[str, Any]:
@@ -304,7 +363,7 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
         )
 
         # 可按需自定义 eos/min_new_tokens；这里用默认
-        text_internal, text_both = _dual_sync_generate_internal_base(
+        text_internal, text_both, prompt_tok, comp_tok_sum, total_tok = _dual_sync_generate_internal_base(
             inputs=inputs,
             lp_internal=lp_internal,
             lp_external=lp_external,
@@ -336,9 +395,9 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
                 }
             ],
             "usage": {
-                "prompt_tokens": int(inputs["input_ids"].numel()),
-                "completion_tokens": None,
-                "total_tokens": None
+                "prompt_tokens": prompt_tok,
+                "completion_tokens": comp_tok_sum,
+                "total_tokens": total_tok
             }
         }
 
@@ -348,7 +407,7 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
         external_names=req.external_processor_names,
         mode="any"
     )
-    text = await asyncio.to_thread(
+    text, prompt_tok, comp_tok, total_tok = await asyncio.to_thread(
         _gen_once, inputs, req.temperature, req.top_p, req.max_tokens, lp_any, do_sample=req._do_sample
     )
     return {
@@ -360,10 +419,19 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
             {"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}
         ],
         "usage": {
-            "prompt_tokens": int(inputs["input_ids"].numel()),
-            "completion_tokens": None,
-            "total_tokens": None
+            "prompt_tokens": prompt_tok,
+            "completion_tokens": comp_tok,
+            "total_tokens": total_tok
         }
     }
 
-# 启动： uvicorn server:app --host 0.0.0.0 --port 8000
+# 启动(开启采样): `uvicorn server:app --host 0.0.0.0 --port 8000`
+# 启动(关闭采样): `SERVER_DO_SAMPLE=0 uvicorn server:app --host 0.0.0.0 --port 8000`
+# 前置可选参数：
+##SAMPLING_MODE=lenient_openai | map_to_greedy | strict
+# 详见 normalize_sampling_args() 说明。默认 lenient_openai。
+# 注意：如果你用的是“strict”模式，
+# 那么请求体里传入 temperature<=0 时会报错。  
+##SERVER_DO_SAMPLE=0 | 1 | false | true
+# 该参数决定默认的采样模式，默认开启采样（true）。
+# 你也可以在请求体里针对每次请求单独指定是否采样。
