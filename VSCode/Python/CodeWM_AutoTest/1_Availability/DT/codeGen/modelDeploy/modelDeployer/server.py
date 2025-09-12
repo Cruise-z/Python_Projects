@@ -627,6 +627,8 @@ def _dual_sync_generate_internal_base(
 
 @app.post("/v1/chat/completions")
 async def chat(req: ChatRequest) -> Dict[str, Any]:
+    print(f"[recv] at {time.time():.3f} messages={len(req.messages)} parallel={req.parallel}")
+    import sys; sys.stdout.flush()
     # 基本校验：messages 不可为空
     if not req.messages:
         raise HTTPException(status_code=422, detail="messages must not be empty")
