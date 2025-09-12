@@ -2,13 +2,15 @@
 # pip install "transformers>=4.41" fastapi uvicorn pydantic torch accelerate
 import time
 import asyncio
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Callable
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, PrivateAttr
 import torch
 import copy
 from transformers import (
-    AutoModelForCausalLM, AutoTokenizer, LogitsProcessorList, TopPLogitsWarper, TemperatureLogitsWarper
+    AutoModelForCausalLM, AutoTokenizer,
+    LogitsProcessorList, TopPLogitsWarper, TemperatureLogitsWarper,
+    LogitsProcessor
 )
 
 # ================= 配置项(是否开启采样/双路同配置) =================
@@ -42,27 +44,82 @@ model = AutoModelForCausalLM.from_pretrained(
     MODEL_ID, torch_dtype=torch.bfloat16, device_map="cuda"
 )
 model.eval()
+# === 生成前的 tokenizer/model 配置兜底：避免 pad 缺失导致的警告或越界 ===
+try:
+    if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+    if getattr(model, "config", None) is not None:
+        cfg = model.config
+        if getattr(cfg, "pad_token_id", None) is None and tokenizer.pad_token_id is not None:
+            cfg.pad_token_id = tokenizer.pad_token_id
+        if getattr(cfg, "eos_token_id", None) is None and tokenizer.eos_token_id is not None:
+            cfg.eos_token_id = tokenizer.eos_token_id
+except Exception:
+    # 兜底不应影响主流程，静默即可
+    pass
 
 # 供你的处理器构造使用的词表（与本服务 tokenizer 完全一致）
 vocab_ids: List[int] = list(tokenizer.get_vocab().values())
 
 # ================= 处理器注册表 & 注册函数 =================
 # 你可以按自己的喜好把“HF内置水印/你自定义的水印”注册到任意一侧
-INTERNAL_PROCESSORS: Dict[str, LogitsProcessorList] = {}
-EXTERNAL_PROCESSORS: Dict[str, LogitsProcessorList] = {}
+# 注册**工厂函数**，在请求解析阶段再实例化，避免跨请求共享可变状态
+ProcessorFactory = Callable[[], LogitsProcessorList]
+INTERNAL_PROCESSORS: Dict[str, ProcessorFactory] = {}
+EXTERNAL_PROCESSORS: Dict[str, ProcessorFactory] = {}
 
 def _ensure_lp_list(p) -> LogitsProcessorList:
+    """
+    将对象规范化为 LogitsProcessorList，并做强类型校验：
+      - 禁止 None
+      - 允许：单个 LogitsProcessor、LogitsProcessorList、list/tuple[LogitsProcessor]
+    """
+    if p is None:
+        raise TypeError("LogitsProcessor is None (expected LogitsProcessor or LogitsProcessorList).")
     if isinstance(p, LogitsProcessorList):
+        for it in p:
+            if not isinstance(it, LogitsProcessor):
+                raise TypeError(f"Invalid item in LogitsProcessorList: {type(it)}")
         return p
-    return LogitsProcessorList([p])
+    if isinstance(p, LogitsProcessor):
+        return LogitsProcessorList([p])
+    if isinstance(p, (list, tuple)):
+        if not all(isinstance(it, LogitsProcessor) for it in p):
+            bad = [type(it) for it in p if not isinstance(it, LogitsProcessor)]
+            raise TypeError(f"Invalid items in processor list: {bad}")
+        return LogitsProcessorList(list(p))
+    raise TypeError(f"Expected LogitsProcessor/LogitsProcessorList/list[LogitsProcessor], got {type(p)}")
 
-def register_internal(name: str, processor_obj: Any) -> None:
-    """注册到“内置处理器列表”命名空间。"""
-    INTERNAL_PROCESSORS[name] = _ensure_lp_list(processor_obj)
+def _as_factory(factory_or_obj: Any) -> ProcessorFactory:
+    """
+    统一转为“无参工厂函数”：
+      1) 若是处理器实例（即使可调用，也当实例对待）→ 每次返回克隆；
+      2) 否则若是可调用的 0 参工厂 → 调用并做强校验；
+    """
+    # ✅ 优先处理实例（LogitsProcessor / LogitsProcessorList / list/tuple[LogitsProcessor]）
+    if isinstance(factory_or_obj, (LogitsProcessor, LogitsProcessorList, list, tuple)):
+        inst_lp = _ensure_lp_list(factory_or_obj)
+        def _factory_from_instance() -> LogitsProcessorList:
+            return _clone_lp_list(inst_lp)
+        return _factory_from_instance
+    # ✅ 其次才把“可调用对象”视作 0 参工厂
+    if callable(factory_or_obj):
+        def _factory_from_callable() -> LogitsProcessorList:
+            prod = factory_or_obj()
+            return _ensure_lp_list(prod)
+        return _factory_from_callable
+    raise TypeError(
+        f"register_* expects a LogitsProcessor/LogitsProcessorList/list[LogitsProcessor] "
+        f"or a zero-arg factory that returns one, got {type(factory_or_obj)}"
+    )
 
-def register_external(name: str, processor_obj: Any) -> None:
-    """注册到“外置处理器列表”命名空间。"""
-    EXTERNAL_PROCESSORS[name] = _ensure_lp_list(processor_obj)
+def register_internal(name: str, factory_or_obj: Any) -> None:
+    """注册到“内置处理器列表”命名空间（以工厂的形式存储）。"""
+    INTERNAL_PROCESSORS[name] = _as_factory(factory_or_obj)
+
+def register_external(name: str, factory_or_obj: Any) -> None:
+    """注册到“外置处理器列表”命名空间（以工厂的形式存储）。"""
+    EXTERNAL_PROCESSORS[name] = _as_factory(factory_or_obj)
 
 def _clone_lp_list(lp: LogitsProcessorList) -> LogitsProcessorList:
     """
@@ -91,13 +148,30 @@ def _resolve_lp_list(
         for n in internal_names:
             if n not in INTERNAL_PROCESSORS:
                 raise HTTPException(status_code=400, detail=f"Unknown internal processor: {n}")
-            chain.extend(_clone_lp_list(INTERNAL_PROCESSORS[n]))
+            # 实例化工厂 -> 得到当次请求的独立处理器链
+            try:
+                lp = INTERNAL_PROCESSORS[n]()
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Internal processor '{n}' factory error: {e}") from e
+            # 逐项强类型校验
+            for it in lp:
+                if not isinstance(it, LogitsProcessor):
+                    raise HTTPException(status_code=400, detail=f"Internal processor '{n}' produced invalid item: {type(it)}")
+            chain.extend(lp)
 
     if mode != "internal_only" and external_names:
         for n in external_names:
             if n not in EXTERNAL_PROCESSORS:
                 raise HTTPException(status_code=400, detail=f"Unknown external processor: {n}")
-            chain.extend(_clone_lp_list(EXTERNAL_PROCESSORS[n]))
+            # 实例化工厂 -> 得到当次请求的独立处理器链
+            try:
+                lp = EXTERNAL_PROCESSORS[n]()
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"External processor '{n}' factory error: {e}") from e
+            for it in lp:
+                if not isinstance(it, LogitsProcessor):
+                    raise HTTPException(status_code=400, detail=f"External processor '{n}' produced invalid item: {type(it)}")
+            chain.extend(lp)
 
     if not chain:
         return None
@@ -180,12 +254,61 @@ def list_processors():
         "external": list(EXTERNAL_PROCESSORS.keys())
     }
     
+@app.get("/v1/models")
+def list_models():
+    """OpenAI 兼容：列出单个可用模型。"""
+    return {"object": "list", "data": [{"id": MODEL_ID, "object": "model"}]}
+
+def _model_ctx_limit() -> Optional[int]:
+    """
+    推断模型支持的最大上下文长度（tokens）。不同模型/配置字段命名不同，这里做兼容兜底，
+    若存在 rope_scaling（如 Llama/Qwen 的扩展）则按 factor 估算有效上限。
+    返回 None 表示无法可靠推断。
+    """
+    cfg = getattr(model, "config", None)
+    if cfg is None:
+        return None
+    base = None
+    for name in ("max_position_embeddings", "max_seq_len", "max_sequence_length", "n_positions", "seq_length"):
+        v = getattr(cfg, name, None)
+        if isinstance(v, int) and v > 0:
+            base = int(v)
+            break
+    if base is None:
+        v = getattr(cfg, "max_length", None)
+        base = int(v) if isinstance(v, int) and v > 0 else None
+    if base is None:
+        return None
+    # rope_scaling 推断（若存在）
+    try:
+        rs = getattr(cfg, "rope_scaling", None)
+        if isinstance(rs, dict):
+            factor = rs.get("factor") or rs.get("rope_factor")
+            if factor:
+                base = int(base * float(factor))
+    except Exception:
+        pass
+    return base
+
+def _cap_max_new_tokens(prompt_len: int, want_new: Optional[int]) -> int:
+    ctx = _model_ctx_limit()
+    safe = int(want_new or 0)
+    return max(0, min(safe, (ctx - prompt_len) if isinstance(ctx, int) else safe))
+
+@app.get("/healthz")
+def healthz():
+    """简单健康检查：可用于 LB 探活。"""
+    return {"status": "ok", "model": MODEL_ID}
+
 def _is_cache_obj(pkv) -> bool:
     """
     判断是否为 transformers 新式 Cache 对象（例如 StaticCache/DynamicCache）。
     这类对象通常具备 get_seq_length()/get_max_capacity 等方法。
     """
-    return hasattr(pkv, "get_seq_length") or pkv.__class__.__name__.lower().endswith("cache")
+    if pkv is None:
+        return False
+    cls_name = pkv.__class__.__name__.lower()
+    return hasattr(pkv, "get_seq_length") or cls_name.endswith("cache")
     
 def _prefill_and_expand_kv(input_ids: torch.Tensor,
                            attn: torch.Tensor,
@@ -264,6 +387,15 @@ def _gen_once(
     logits_processor: Optional[LogitsProcessorList],
     do_sample: Optional[bool] = None,
 ) -> tuple[str, int, int, int]:
+    # 统一裁剪 max_new_tokens，避免越界/OOM
+    prompt_len = int(inputs["input_ids"].shape[1])
+    try:
+        want = int(max_tokens) if max_tokens is not None else 0
+    except Exception:
+        want = 0
+    max_new = _cap_max_new_tokens(prompt_len, want)
+    if max_new <= 0:
+        return "", prompt_len, 0, prompt_len
     _do_sample = SERVER_DO_SAMPLE if do_sample is None else bool(do_sample)
     # 归一化采样参数
     _do_sample, temperature, top_p = normalize_sampling_args(_do_sample, temperature, top_p)
@@ -272,7 +404,7 @@ def _gen_once(
         do_sample=_do_sample,
         temperature=temperature,
         top_p=top_p,
-        max_new_tokens=max_tokens,
+        max_new_tokens=max_new,
         logits_processor=logits_processor,
     )
 
@@ -307,7 +439,7 @@ def _dual_sync_generate_internal_base(
     eos_token_id: Optional[Union[int, List[int]]] = None,
     min_new_tokens: int = 0,
     do_sample: bool = SERVER_DO_SAMPLE,           # 新增，默认用全局
-) -> tuple[str, str, int, int, int]:
+) -> tuple[str, str, int, int, int, List[bool]]:
     """
     同步分叉并行（以内置处理后的分布作为基准），并避免对 prompt 的重复前向：
     - 每步只做一次前向，得到 logits；
@@ -315,7 +447,7 @@ def _dual_sync_generate_internal_base(
       * internal_only 分支：在 scores_internal 上采样；
       * internal_plus_external 分支：在 scores_internal.clone() 上再应用“外置链”后采样。
     - 两路各自推进各自序列（batch=2，共享 KV cache）。
-    返回：(text_internal_only, text_internal_plus_external, prompt_tok, completion_tok_sum, total_tok)
+    返回：(text_internal_only, text_internal_plus_external, prompt_tok, completion_tok_sum, total_tok, finished[List[bool]])
     """
     device = next(model.parameters()).device
     input_ids = inputs["input_ids"].to(device)  # [1, L]
@@ -324,11 +456,16 @@ def _dual_sync_generate_internal_base(
         attn = torch.ones_like(input_ids, dtype=torch.long, device=device)
     else:
         attn = attn.to(device)
-
-    # ====== 早退：不生成任何新 token 的情况 ======
+        
+    # === 在进入生成循环前，根据模型上下文上限裁剪 max_new_tokens，避免越界 ===
+    prompt_len = int(input_ids.shape[1])
+    try:
+        want = int(max_new_tokens or 0)
+    except Exception:
+        want = 0
+    max_new_tokens = _cap_max_new_tokens(prompt_len, want)
     if max_new_tokens <= 0:
-        prompt_tok = int(input_ids.shape[1])
-        return "", "", prompt_tok, 0, prompt_tok
+        return "", "", prompt_len, 0, prompt_len, [False, False]
 
     # ====== 预填充阶段（prefill）：优先尝试 KV 复制，失败则回退到 batch=2 prefill ======
     pkv, last_logits_b2, _used_fallback = _prefill_and_expand_kv(input_ids, attn, times=2)
@@ -336,7 +473,6 @@ def _dual_sync_generate_internal_base(
     # 两路各自保持独立序列，但首步避免重复跑 prompt
     cur_ids = input_ids.repeat(2, 1).contiguous()   # [2, L]
     cur_attn = attn.repeat(2, 1).contiguous()       # [2, L]
-    prompt_len = input_ids.shape[1]
 
     # 归一化采样参数
     do_sample, temperature, top_p = normalize_sampling_args(do_sample, temperature, top_p)
@@ -369,30 +505,51 @@ def _dual_sync_generate_internal_base(
         return scores
 
     # ====== 首步生成：利用预填充得到的最后时刻 logits，避免重复跑 prompt ======
-    logits_b2 = last_logits_b2  # [2, vocab]（两路首步上下文相同/或回退路径下的真实 batch=2 logits）
-    base0 = _apply(lp_internal, cur_ids[0:1, :], logits_b2[0:1, :])  # [1, vocab]
-    base1 = _apply(lp_internal, cur_ids[1:2, :], logits_b2[1:2, :])  # [1, vocab]
+    # logits_b2 = last_logits_b2  # [2, vocab]（两路首步上下文相同/或回退路径下的真实 batch=2 logits）
+    # base0 = _apply(lp_internal, cur_ids[0:1, :], logits_b2[0:1, :])  # [1, vocab]
+    # base1 = _apply(lp_internal, cur_ids[1:2, :], logits_b2[1:2, :])  # [1, vocab]
 
-    # 路0：internal_only
-    scores0 = base0.clone()
+    # # 路0：internal_only
+    # scores0 = base0.clone()
+    # if do_sample and len(warpers):
+    #     scores0 = warpers(cur_ids[0:1, :], scores0)
+    # tok0 = _sample_from_scores(scores0, do_sample)
+    # if not finished[0]:
+    #     comp_tok_each[0] += 1
+    # if eos_ids and int(tok0.item()) in eos_ids:
+    #     finished[0] = True
+
+    # # 路1：internal_plus_external
+    # scores1 = base1.clone()
+    # if lp_external is not None:
+    #     scores1 = _apply(lp_external, cur_ids[1:2, :], scores1)
+    # if do_sample and len(warpers):
+    #     scores1 = warpers(cur_ids[1:2, :], scores1)
+    # tok1 = _sample_from_scores(scores1, do_sample)
+    # if not finished[1]:
+    #     comp_tok_each[1] += 1
+    # if eos_ids and int(tok1.item()) in eos_ids:
+    #     finished[1] = True
+    
+    logits_b2 = last_logits_b2  # [2, vocab]（两路首步上下文相同/或回退路径下的真实 batch=2 logits）
+    # 只用内置链计算共享分布（两路上下文相同，用第0路即可）
+    base_shared = _apply(lp_internal, cur_ids[0:1, :], logits_b2[0:1, :])  # [1, vocab]
+    scores_shared = base_shared.clone()
     if do_sample and len(warpers):
-        scores0 = warpers(cur_ids[0:1, :], scores0)
-    tok0 = _sample_from_scores(scores0, do_sample)
+        scores_shared = warpers(cur_ids[0:1, :], scores_shared)
+    # 得到共享首 token
+    tok_shared = _sample_from_scores(scores_shared, do_sample)  # [1,1]
+    # 两路首 token 强制一致
+    tok0 = tok_shared.clone()
+    tok1 = tok_shared.clone()
+    # 记录有效生成 token（首步不可能已 finished，这里与后续计数风格保持一致）
     if not finished[0]:
         comp_tok_each[0] += 1
-    if eos_ids and int(tok0.item()) in eos_ids:
-        finished[0] = True
-
-    # 路1：internal_plus_external
-    scores1 = base1.clone()
-    if lp_external is not None:
-        scores1 = _apply(lp_external, cur_ids[1:2, :], scores1)
-    if do_sample and len(warpers):
-        scores1 = warpers(cur_ids[1:2, :], scores1)
-    tok1 = _sample_from_scores(scores1, do_sample)
     if not finished[1]:
         comp_tok_each[1] += 1
-    if eos_ids and int(tok1.item()) in eos_ids:
+    # 若为 EOS，则两路同时结束
+    if eos_ids and int(tok_shared.item()) in eos_ids:
+        finished[0] = True
         finished[1] = True
 
     # 拼接与对齐
@@ -466,12 +623,23 @@ def _dual_sync_generate_internal_base(
     comp_tok_sum = int(comp_tok_each[0] + comp_tok_each[1])  # 仅计有效生成，不含对齐
     total_tok = prompt_tok + comp_tok_sum
     
-    return texts[0], texts[1], prompt_tok, comp_tok_sum, total_tok
+    return texts[0], texts[1], prompt_tok, comp_tok_sum, total_tok, finished
 
 @app.post("/v1/chat/completions")
 async def chat(req: ChatRequest) -> Dict[str, Any]:
+    # 基本校验：messages 不可为空
+    if not req.messages:
+        raise HTTPException(status_code=422, detail="messages must not be empty")
     msgs = [m.model_dump() for m in req.messages]
     inputs = _prep_inputs(msgs)
+    # 额外校验：prompt 不应超过上下文上限（超过直接 400）
+    try:
+        prompt_len = int(inputs["input_ids"].shape[1])
+    except Exception:
+        prompt_len = 0
+    ctx_lim = _model_ctx_limit()
+    if isinstance(ctx_lim, int) and prompt_len > ctx_lim:
+        raise HTTPException(status_code=400, detail=f"prompt_too_long: {prompt_len}>{ctx_lim}")
 
     # 并行：两路（仅内置）与（内置+外置）
     if req.parallel:
@@ -491,18 +659,33 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
             mode="any"
         )
 
-        # 可按需自定义 eos/min_new_tokens；这里用默认
-        text_internal, text_both, prompt_tok, comp_tok_sum, total_tok = _dual_sync_generate_internal_base(
-            inputs=inputs,
-            lp_internal=lp_internal,
-            lp_external=lp_external,
-            do_sample=req._do_sample,
-            temperature=req.temperature,
-            top_p=req.top_p,
-            max_new_tokens=req.max_tokens,
-            eos_token_id=model.generation_config.eos_token_id,
-            min_new_tokens=0
-        )
+        try:
+            # 放入线程池避免阻塞事件循环；并显式处理 CUDA OOM
+            text_internal, text_both, prompt_tok, comp_tok_sum, total_tok, finished = await asyncio.to_thread(
+                _dual_sync_generate_internal_base,
+                inputs,
+                lp_internal,
+                lp_external,
+                req.temperature,
+                req.top_p,
+                req.max_tokens,
+                model.generation_config.eos_token_id,
+                0,
+                do_sample=req._do_sample
+            )
+        except torch.cuda.OutOfMemoryError as e:
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+            raise HTTPException(status_code=503, detail="generation_error: cuda_oom") from e
+        except Exception as e:
+            # 统一转换为 500，避免栈追踪暴露
+            raise HTTPException(status_code=500, detail=f"generation_error: {e.__class__.__name__}: {e}") from e
+        
+        # 逐路精确设置 finish_reason：到达 EOS => "stop"；达到长度上限 => "length"
+        fr_internal = "stop" if finished[0] else "length"
+        fr_both = "stop" if finished[1] else "length"
 
         return {
             "id": f"chatcmpl-{int(time.time()*1000)}",
@@ -513,13 +696,13 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
                 {
                     "index": 0,
                     "message": {"role": "assistant", "content": text_internal},
-                    "finish_reason": "stop",
+                    "finish_reason": fr_internal,
                     "variant": "internal_only"
                 },
                 {
                     "index": 1,
                     "message": {"role": "assistant", "content": text_both},
-                    "finish_reason": "stop",
+                    "finish_reason": fr_both,
                     "variant": "internal_plus_external"
                 }
             ],
@@ -536,16 +719,34 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
         external_names=req.external_processor_names,
         mode="any"
     )
-    text, prompt_tok, comp_tok, total_tok = await asyncio.to_thread(
-        _gen_once, inputs, req.temperature, req.top_p, req.max_tokens, lp_any, do_sample=req._do_sample
-    )
+    try:
+        text, prompt_tok, comp_tok, total_tok = await asyncio.to_thread(
+            _gen_once, inputs, req.temperature, req.top_p, req.max_tokens, lp_any, do_sample=req._do_sample
+        )
+    except torch.cuda.OutOfMemoryError as e:
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+        raise HTTPException(status_code=503, detail="generation_error: cuda_oom") from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"generation_error: {e.__class__.__name__}: {e}") from e
+    # 更准确的 finish_reason：与裁剪后的 max_new_tokens 比较
+    try:
+        prompt_len = int(inputs["input_ids"].shape[1])
+        want = int(req.max_tokens or 0)
+    except Exception:
+        prompt_len, want = int(inputs["input_ids"].shape[1]), 0
+    capped = _cap_max_new_tokens(prompt_len, want)
+    # comp_tok == capped → 达到长度上限，否则视为正常停止
+    fr = "length" if capped > 0 and comp_tok >= capped else "stop"
     return {
         "id": f"chatcmpl-{int(time.time()*1000)}",
         "object": "chat.completion",
         "created": int(time.time()),
         "model": req.model,
         "choices": [
-            {"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}
+            {"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": fr}
         ],
         "usage": {
             "prompt_tokens": prompt_tok,
