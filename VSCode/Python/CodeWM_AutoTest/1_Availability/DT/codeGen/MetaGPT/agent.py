@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# agent.py
+# 2024/6/18 15:28
+# zhaorz
+# description: 用MetaGPT生成代码工程的代理脚本
+# MetaGPT version: 0.8.2
+
 #=====================================基础环境配置=====================================#
 import os
 os.chdir("/home/zhaorz/project/CodeWM/sweet-watermark/DT/workspace")
