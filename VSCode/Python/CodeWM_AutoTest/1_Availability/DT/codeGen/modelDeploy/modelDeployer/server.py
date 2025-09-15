@@ -3,10 +3,13 @@
 import time
 import asyncio
 from typing import Any, Dict, List, Optional, Union, Callable
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, PrivateAttr
 import torch
 import copy
+import json
+import logging
+from starlette.middleware.base import BaseHTTPMiddleware
 from transformers import (
     AutoModelForCausalLM, AutoTokenizer,
     LogitsProcessorList, TopPLogitsWarper, TemperatureLogitsWarper,
@@ -246,6 +249,34 @@ def normalize_sampling_args(do_sample: bool,
 
 app = FastAPI()
 
+# ====== 简单请求体大小日志中间件（仅在特定路由启用）======
+logger = logging.getLogger("server")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
+
+class LogReqSizeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # 需要统计的路径可按需增减
+        if request.url.path in ("/v1/chat/completions", "/dbg/echo-len"):
+            try:
+                body = await request.body()          # Starlette 会缓存，后续可重复读取
+                size = len(body or b"")
+                cl = request.headers.get("content-length")
+                # 尝试解析 parallel 字段，便于并行压测时定位
+                parallel = None
+                try:
+                    data = json.loads(body.decode("utf-8"))
+                    parallel = data.get("parallel", None)
+                except Exception:
+                    pass
+                logger.info("[recv] bytes=%s content-length=%s path=%s parallel=%s",
+                            size, cl, request.url.path, parallel)
+            except Exception as e:
+                logger.warning("[recv] failed to read body: %r", e)
+        return await call_next(request)
+
+app.add_middleware(LogReqSizeMiddleware)
+
 @app.get("/v1/_processors")
 def list_processors():
     """调试端点：查看当前已注册的处理器名称。"""
@@ -258,6 +289,16 @@ def list_processors():
 def list_models():
     """OpenAI 兼容：列出单个可用模型。"""
     return {"object": "list", "data": [{"id": MODEL_ID, "object": "model"}]}
+
+# ====== 调试端点：返回请求体长度 ======
+@app.post("/dbg/echo-len")
+async def dbg_echo_len(request: Request):
+    try:
+        body = await request.body()
+        cl = request.headers.get("content-length")
+        return {"len": len(body or b""), "content_length": cl}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"echo_len_error: {e}")
 
 def _model_ctx_limit() -> Optional[int]:
     """

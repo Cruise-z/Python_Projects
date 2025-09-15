@@ -53,7 +53,7 @@ curl --noproxy 127.0.0.1,localhost http://127.0.0.1:8000/v1/chat/completions \
 python3 - <<'PY' | curl --noproxy 127.0.0.1,localhost -sS http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' -d @- | jq .
 import json
-N_CHUNKS = 11   # 先小到 50/100 验证，再逐步加到 800/2000/5000
+N_CHUNKS = 12   # 先小到 50/100 验证，再逐步加到 800/2000/5000
 
 header = (
   "你现在是一个严格的审校器。请阅读下面的超长技术文档片段集合，"
@@ -91,8 +91,8 @@ PY
 python3 - <<'PY' | curl --max-time 120 --noproxy 127.0.0.1,localhost -sS http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' -d @- | jq .
 import json
-N_CHUNKS = 120
-header = "并行压测：请读完整个大段文本后仅回复“OK:parallel”。\\n\\n"
+N_CHUNKS = 250
+header = "并行压测：请读完整个大段文本后仅回复“OK:parallel:zrz zzzzz”。\\n\\n"
 def chunk(i): return f"[{i:04d}] 压测行 {i} —— tokens*mix —— 0123456789 ABC abc XYZ。\\n"
 body = "".join(chunk(i) for i in range(N_CHUNKS))
 payload = {
