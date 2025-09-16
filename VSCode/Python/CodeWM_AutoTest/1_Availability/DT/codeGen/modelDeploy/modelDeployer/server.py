@@ -40,6 +40,11 @@ SAMPLING_MODE = _as_mode(os.getenv("SAMPLING_MODE", "lenient_openai"))
 # 是否强制在并行模式下提供 external_processor_names（避免“两路同配置”的误用）
 REQUIRE_EXTERNAL_IN_PARALLEL = _as_bool(os.getenv("REQUIRE_EXTERNAL_IN_PARALLEL", "0"))
 
+# ====== 原始请求体打印控制（默认关闭，按需开启）======
+# LOG_REQ_BODY=1 开启打印；LOG_REQ_BODY_BYTES 控制最多打印多少原始字节
+LOG_REQ_BODY = _as_bool(os.getenv("LOG_REQ_BODY", "0"))
+LOG_REQ_BODY_BYTES = int(os.getenv("LOG_REQ_BODY_BYTES", "4096"))
+
 # ================= 模型加载（默认不启用任何内置水印） =================
 MODEL_ID = "Qwen/Qwen2.5-Coder-32B-Instruct"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
@@ -69,7 +74,20 @@ vocab_ids: List[int] = list(tokenizer.get_vocab().values())
 # 注册**工厂函数**，在请求解析阶段再实例化，避免跨请求共享可变状态
 ProcessorFactory = Callable[[], LogitsProcessorList]
 INTERNAL_PROCESSORS: Dict[str, ProcessorFactory] = {}
-EXTERNAL_PROCESSORS: Dict[str, ProcessorFactory] = {}
+EXTERNAL_PROCESSORS: Dict[str, ProcessorFactory] = {} # 保留类型与 API，但解析时将不再使用
+
+# ===== 纯 builder 化：外置处理器通过可参数化 builder 动态实例化 =====
+ParametricBuilder = Callable[..., Any]
+EXTERNAL_BUILDERS: Dict[str, ParametricBuilder] = {}
+
+def register_external_builder(name: str, builder: ParametricBuilder) -> None:
+    """
+    注册可参数化的外置处理器 builder。请求端可通过 external_processor_params[name]
+    传参；这里会强制覆盖 vocab=vocab_ids，忽略来路 vocab。
+    """
+    if not callable(builder):
+        raise TypeError(f"external builder for '{name}' must be callable")
+    EXTERNAL_BUILDERS[name] = builder
 
 def _ensure_lp_list(p) -> LogitsProcessorList:
     """
@@ -121,7 +139,10 @@ def register_internal(name: str, factory_or_obj: Any) -> None:
     INTERNAL_PROCESSORS[name] = _as_factory(factory_or_obj)
 
 def register_external(name: str, factory_or_obj: Any) -> None:
-    """注册到“外置处理器列表”命名空间（以工厂的形式存储）。"""
+    """
+    兼容函数：保留以防老代码调用，但解析阶段不再使用 EXTERNAL_PROCESSORS。
+    如继续调用，本函数只做注册，不参与生成路径。
+    """
     EXTERNAL_PROCESSORS[name] = _as_factory(factory_or_obj)
 
 def _clone_lp_list(lp: LogitsProcessorList) -> LogitsProcessorList:
@@ -141,6 +162,8 @@ def _resolve_lp_list(
     internal_names: Optional[List[str]],
     external_names: Optional[List[str]],
     mode: str,  # "internal_only" | "internal_plus_external" | "any"
+    *,
+    external_params: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Optional[LogitsProcessorList]:
     """按名称把多个处理器拼成一个 LogitsProcessorList，保持你传入的顺序。
        约定：并行模式下内置先于外置；单路模式下也遵循“先内置、后外置”的顺序。
@@ -164,16 +187,20 @@ def _resolve_lp_list(
 
     if mode != "internal_only" and external_names:
         for n in external_names:
-            if n not in EXTERNAL_PROCESSORS:
-                raise HTTPException(status_code=400, detail=f"Unknown external processor: {n}")
-            # 实例化工厂 -> 得到当次请求的独立处理器链
+            if n not in EXTERNAL_BUILDERS:
+                # 纯 builder 化：未注册 builder 直接报错
+                raise HTTPException(status_code=400, detail=f"Unknown external builder: {n}")
+            # 从请求取参数并强制覆盖 vocab
+            cfg = dict((external_params or {}).get(n) or {})
+            cfg.pop("vocab", None)
             try:
-                lp = EXTERNAL_PROCESSORS[n]()
+                obj = EXTERNAL_BUILDERS[n](vocab=vocab_ids, **cfg)
+                lp = _ensure_lp_list(obj)
             except Exception as e:
-                raise HTTPException(status_code=400, detail=f"External processor '{n}' factory error: {e}") from e
+                raise HTTPException(status_code=400, detail=f"External builder '{n}' error: {e}") from e
             for it in lp:
                 if not isinstance(it, LogitsProcessor):
-                    raise HTTPException(status_code=400, detail=f"External processor '{n}' produced invalid item: {type(it)}")
+                    raise HTTPException(status_code=400, detail=f"External builder '{n}' produced invalid item: {type(it)}")
             chain.extend(lp)
 
     if not chain:
@@ -189,7 +216,7 @@ try:
     importlib.import_module("regWM")  # 其中应在顶层调用 register_xxx 完成注册
     print("[server] processors loaded ->",
           "internal:", list(INTERNAL_PROCESSORS.keys()),
-          "external:", list(EXTERNAL_PROCESSORS.keys()))
+          "external_builders:", list(EXTERNAL_BUILDERS.keys()))
 except Exception as e:
     print(f"[server] regWM not loaded: {e}")
 
@@ -212,6 +239,8 @@ class ChatRequest(BaseModel):
 
     # 并行开关：True 时返回两路结果（仅内置）与（内置+外置）
     parallel: Optional[bool] = False
+    # 仅对 external 生效：按名称传 builder 参数
+    external_processor_params: Optional[Dict[str, Dict[str, Any]]] = None
     
     # —— 隐藏开关：不出现在 schema，客户端也传不进来 —— #
     _do_sample: bool = PrivateAttr(default=SERVER_DO_SAMPLE)
@@ -271,6 +300,21 @@ class LogReqSizeMiddleware(BaseHTTPMiddleware):
                     pass
                 logger.info("[recv] bytes=%s content-length=%s path=%s parallel=%s",
                             size, cl, request.url.path, parallel)
+                # 可选：打印请求体内容（受限于 LOG_REQ_BODY / LOG_REQ_BODY_BYTES）
+                if LOG_REQ_BODY:
+                    preview = body[:LOG_REQ_BODY_BYTES]
+                    # 优先尝试 JSON pretty-print；失败则按文本打印
+                    printed = None
+                    try:
+                        parsed = json.loads(preview.decode("utf-8", "replace"))
+                        printed = json.dumps(parsed, ensure_ascii=False, indent=2)
+                    except Exception:
+                        printed = preview.decode("utf-8", "replace")
+                    # 标注预览与总大小，避免误解为完整 body
+                    logger.info(
+                        "[recv] body_preview(%d/%dB): %s",
+                        len(preview), size, printed
+                    )
             except Exception as e:
                 logger.warning("[recv] failed to read body: %r", e)
         return await call_next(request)
@@ -282,7 +326,8 @@ def list_processors():
     """调试端点：查看当前已注册的处理器名称。"""
     return {
         "internal": list(INTERNAL_PROCESSORS.keys()),
-        "external": list(EXTERNAL_PROCESSORS.keys())
+        "external": list(EXTERNAL_PROCESSORS.keys()),     # 保留兼容展示
+        "external_builders": list(EXTERNAL_BUILDERS.keys())
     }
     
 @app.get("/v1/models")
@@ -699,7 +744,8 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
         lp_external = _resolve_lp_list(   # 只拿“外置”链；允许 None
             internal_names=None,
             external_names=req.external_processor_names,
-            mode="any"
+            mode="any",
+            external_params=req.external_processor_params
         )
 
         try:
@@ -760,7 +806,8 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
     lp_any = _resolve_lp_list(
         internal_names=req.internal_processor_names,
         external_names=req.external_processor_names,
-        mode="any"
+        mode="any",
+        external_params=req.external_processor_params
     )
     try:
         text, prompt_tok, comp_tok, total_tok = await asyncio.to_thread(

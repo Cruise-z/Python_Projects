@@ -3,9 +3,17 @@
 ## 启动模型服务
 
 模型启动方式：
-SERVER_DO_SAMPLE=1 SAMPLING_MODE=lenient_openai uvicorn server:app --host 0.0.0.0 --port 8000
 
-DEBUG启动：
+### 常规
+```bash
+LOG_REQ_BODY=1 LOG_REQ_BODY_BYTES=8192 SERVER_DO_SAMPLE=1 SAMPLING_MODE=lenient_openai uvicorn server:app --host 0.0.0.0 --port 8000
+```
+
+
+
+### DEBUG启动：
+```bash
+LOG_REQ_BODY=1 LOG_REQ_BODY_BYTES=8192 SERVER_DO_SAMPLE=1 SAMPLING_MODE=lenient_openai \
 uvicorn server:app \
   --host 0.0.0.0 --port 8000 \
   --http httptools \
@@ -13,27 +21,46 @@ uvicorn server:app \
   --log-level debug \
   --access-log \
   --timeout-keep-alive 300
+```
 
-# 单 worker，超时都拉长
+
+
+### 单 worker，超时都拉长
+```bash
 gunicorn server:app \
   -k uvicorn.workers.UvicornWorker \
   -w 1 -b 0.0.0.0:8000 \
   --timeout 600 --graceful-timeout 600 --keep-alive 300 \
   --log-level debug
+```
 
-模型包装测试：
+
+
+## 模型包装测试：
+
+```bash
 curl --noproxy 127.0.0.1,localhost http://127.0.0.1:8000/v1/_processors
+```
+
+```bash
 curl --noproxy 127.0.0.1,localhost http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model":"Qwen/Qwen2.5-Coder-32B-Instruct",
     "messages":[{"role":"user","content":"讲讲BFS与DFS差异并举例"}],
-    "temperature":0.7,
+    "parallel": true,
+    "temperature":0.0,
     "internal_processor_names":[],
     "external_processor_names":["sweet"],
-    "parallel": true,
+    "external_processor_params": {
+      "sweet": {"gamma":0.7,"delta":2,"entropy_threshold":0.85},
+      "wllm":  {"gamma":0.4,"delta":1}
+    },
     "max_tokens": 2048
   }' | jq .
+```
+
+```bash
 curl --noproxy 127.0.0.1,localhost http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
@@ -42,14 +69,16 @@ curl --noproxy 127.0.0.1,localhost http://127.0.0.1:8000/v1/chat/completions \
     "temperature": 0,
     "max_tokens": 64
   }' | jq .
-
-## 运行代理
-
-代理启动方式：
-自定义配置代理文件`agent.py`后直接python启动即可
+```
 
 
-压力测试：
+
+
+## 压力测试：
+
+### 常规压测
+
+```bash
 python3 - <<'PY' | curl --noproxy 127.0.0.1,localhost -sS http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' -d @- | jq .
 import json
@@ -87,11 +116,17 @@ payload = {
 }
 print(json.dumps(payload, ensure_ascii=False))
 PY
+```
 
+
+
+### 并行压测
+
+```bash
 python3 - <<'PY' | curl --max-time 120 --noproxy 127.0.0.1,localhost -sS http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' -d @- | jq .
 import json
-N_CHUNKS = 250
+N_CHUNKS = 260
 header = "并行压测：请读完整个大段文本后仅回复“OK:parallel:zrz zzzzz”。\\n\\n"
 def chunk(i): return f"[{i:04d}] 压测行 {i} —— tokens*mix —— 0123456789 ABC abc XYZ。\\n"
 body = "".join(chunk(i) for i in range(N_CHUNKS))
@@ -106,3 +141,4 @@ payload = {
 }
 print(json.dumps(payload, ensure_ascii=False))
 PY
+```

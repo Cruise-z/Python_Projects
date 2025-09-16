@@ -1,5 +1,5 @@
-# user_processors.py
-from server import register_internal, register_external, vocab_ids
+# regWM.py
+from server import register_internal, register_external_builder, vocab_ids
 
 # 示例A：把 HF 的 WatermarkLogitsProcessor 当作“内置”
 # from transformers import WatermarkLogitsProcessor
@@ -18,22 +18,18 @@ from server import register_internal, register_external, vocab_ids
 from libWM.watermark import WatermarkLogitsProcessor as WLLM
 from libWM.sweet import SweetLogitsProcessor as Sweet
 
-wllm_processor = WLLM(
-    vocab=vocab_ids,  # 你要求的传参方式
-    gamma=0.5,
-    delta=1
-)
-sweet_processor = Sweet(
-    vocab=vocab_ids,
-    gamma=0.5,
-    delta=1,
-    entropy_threshold=0.9
-)
+# ===== 纯 builder 化：仅注册可参数化 builder =====
+def build_wllm(**cfg):
+    gamma = cfg.get("gamma", 0.5)
+    delta = cfg.get("delta", 1)
+    # vocab 由服务端注入 vocab_ids，这里不从 cfg 读取
+    return WLLM(vocab=vocab_ids, gamma=gamma, delta=delta)
 
-# 你可以把它们分别注册，也可以先组装成一个列表再注册成一个名字
-register_external("wllm", wllm_processor)
-register_external("sweet", sweet_processor)
+def build_sweet(**cfg):
+    gamma = cfg.get("gamma", 0.5)
+    delta = cfg.get("delta", 1)
+    entropy_threshold = cfg.get("entropy_threshold", 0.9)
+    return Sweet(vocab=vocab_ids, gamma=gamma, delta=delta, entropy_threshold=entropy_threshold)
 
-# 也支持链式组合（示例：外置链 = wllm + sweet）
-# from transformers import LogitsProcessorList
-# register_external("wllm_plus_sweet", LogitsProcessorList([wllm_processor, sweet_processor]))
+register_external_builder("wllm", build_wllm)
+register_external_builder("sweet", build_sweet)
