@@ -19,19 +19,18 @@
 
 import json
 from pathlib import Path
-from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from metagpt.actions.action import Action
 from metagpt.actions.project_management_an import REFINED_TASK_LIST, TASK_LIST
 from metagpt.actions.write_code_plan_and_change_an import REFINED_TEMPLATE
+from metagpt.const import BUGFIX_FILENAME, REQUIREMENT_FILENAME
 from metagpt.logs import logger
 from metagpt.schema import CodingContext, Document, RunCodeResult
-from metagpt.utils.common import CodeParser, get_markdown_code_block_type
+from metagpt.utils.common import CodeParser
 from metagpt.utils.project_repo import ProjectRepo
-from metagpt.utils.report import EditorReporter
 
 PROMPT_TEMPLATE = """
 NOTICE
@@ -47,7 +46,9 @@ ATTENTION: Use '##' to SPLIT SECTIONS, not '#'. Output format carefully referenc
 {task}
 
 ## Legacy Code
+```Code
 {code}
+```
 
 ## Debug logs
 ```text
@@ -62,14 +63,9 @@ ATTENTION: Use '##' to SPLIT SECTIONS, not '#'. Output format carefully referenc
 ```
 
 # Format example
-## Code: {demo_filename}.py
+## Code: {filename}
 ```python
-## {demo_filename}.py
-...
-```
-## Code: {demo_filename}.js
-```javascript
-// {demo_filename}.js
+## {filename}
 ...
 ```
 
@@ -87,30 +83,27 @@ ATTENTION: Use '##' to SPLIT SECTIONS, not '#'. Output format carefully referenc
 """
 
 
-class WriteCodeLocal(Action):
+class WriteCode(Action):
     name: str = "WriteCode"
     i_context: Document = Field(default_factory=Document)
-    repo: Optional[ProjectRepo] = Field(default=None, exclude=True)
-    input_args: Optional[BaseModel] = Field(default=None, exclude=True)
 
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+    # async def write_code(self, prompt) -> str:
+    #     code_rsp = await self._aask(prompt)
+    #     code = CodeParser.parse_code(block="", text=code_rsp)
+    #     return code
+    
     async def write_code(self, prompt) -> tuple[str, str]:
         code_rsp0, code_rsp1 = await self._aask_local(prompt)
-        code_ori = CodeParser.parse_code(text=code_rsp0)
-        code_wm = CodeParser.parse_code(text=code_rsp1)
+        code_ori = CodeParser.parse_code(block="", text=code_rsp0)
+        code_wm = CodeParser.parse_code(block="", text=code_rsp1)
         return code_ori, code_wm
 
     async def run(self, *args, **kwargs) -> CodingContext:
-        bug_feedback = None
-        if self.input_args and hasattr(self.input_args, "issue_filename"):
-            bug_feedback = await Document.load(self.input_args.issue_filename)
+        bug_feedback = await self.repo.docs.get(filename=BUGFIX_FILENAME)
         coding_context = CodingContext.loads(self.i_context.content)
-        if not coding_context.code_plan_and_change_doc:
-            coding_context.code_plan_and_change_doc = await self.repo.docs.code_plan_and_change.get(
-                filename=coding_context.task_doc.filename
-            )
         test_doc = await self.repo.test_outputs.get(filename="test_" + coding_context.filename + ".json")
-        requirement_doc = await Document.load(self.input_args.requirements_filename)
+        requirement_doc = await self.repo.docs.get(filename=REQUIREMENT_FILENAME)
         summary_doc = None
         if coding_context.design_doc and coding_context.design_doc.filename:
             summary_doc = await self.repo.docs.code_summary.get(filename=coding_context.design_doc.filename)
@@ -119,28 +112,29 @@ class WriteCodeLocal(Action):
             test_detail = RunCodeResult.loads(test_doc.content)
             logs = test_detail.stderr
 
-        if self.config.inc or bug_feedback:
+        if bug_feedback:
+            code_context = coding_context.code_doc.content
+        elif self.config.inc:
             code_context = await self.get_codes(
                 coding_context.task_doc, exclude=self.i_context.filename, project_repo=self.repo, use_inc=True
             )
         else:
             code_context = await self.get_codes(
-                coding_context.task_doc, exclude=self.i_context.filename, project_repo=self.repo
+                coding_context.task_doc,
+                exclude=self.i_context.filename,
+                project_repo=self.repo.with_src_path(self.context.src_workspace),
             )
 
         if self.config.inc:
             prompt = REFINED_TEMPLATE.format(
                 user_requirement=requirement_doc.content if requirement_doc else "",
-                code_plan_and_change=coding_context.code_plan_and_change_doc.content
-                if coding_context.code_plan_and_change_doc
-                else "",
+                code_plan_and_change=str(coding_context.code_plan_and_change_doc),
                 design=coding_context.design_doc.content if coding_context.design_doc else "",
                 task=coding_context.task_doc.content if coding_context.task_doc else "",
                 code=code_context,
                 logs=logs,
                 feedback=bug_feedback.content if bug_feedback else "",
                 filename=self.i_context.filename,
-                demo_filename=Path(self.i_context.filename).stem,
                 summary_log=summary_doc.content if summary_doc else "",
             )
         else:
@@ -151,24 +145,23 @@ class WriteCodeLocal(Action):
                 logs=logs,
                 feedback=bug_feedback.content if bug_feedback else "",
                 filename=self.i_context.filename,
-                demo_filename=Path(self.i_context.filename).stem,
                 summary_log=summary_doc.content if summary_doc else "",
             )
+        # logger.info(f"Writing {coding_context.filename}..")
+        # code = await self.write_code(prompt)
         p = Path(coding_context.filename)  # -> "SnakeGame.java"
         name = p.stem                 # -> "SnakeGame"
         ext  = p.suffix.lstrip('.')   # -> "java"
         fileName = f"{name}_both.{ext}"
         logger.info(f"Writing {fileName}..")
-        async with EditorReporter(enable_llm_stream=True) as reporter:
-            await reporter.async_report({"type": "code", "filename": fileName}, "meta")
-            code_ori, code_wm = await self.write_code(prompt)
-            if not coding_context.code_doc:
-                # avoid root_path pydantic ValidationError if use WriteCode alone
-                coding_context.code_doc = Document(
-                    filename=fileName, root_path=str(self.repo.src_relative_path)
-                )
-            coding_context.code_doc.content = code_ori + "\n<wm_code>\n" + code_wm + "\n</wm_code>\n"
-            await reporter.async_report(coding_context.code_doc, "document")
+        code_ori, code_wm = await self.write_code(prompt)
+        if not coding_context.code_doc:
+            # avoid root_path pydantic ValidationError if use WriteCode alone
+            root_path = self.context.src_workspace if self.context.src_workspace else ""
+            # coding_context.code_doc = Document(filename=coding_context.filename, root_path=str(root_path))
+            coding_context.code_doc = Document(filename=fileName, root_path=str(root_path))
+        # coding_context.code_doc.content = code
+        coding_context.code_doc.content = code_ori + "\n<wm_code>\n" + code_wm + "\n</wm_code>\n"
         return coding_context
 
     @staticmethod
@@ -193,32 +186,35 @@ class WriteCodeLocal(Action):
         code_filenames = m.get(TASK_LIST.key, []) if not use_inc else m.get(REFINED_TASK_LIST.key, [])
         codes = []
         src_file_repo = project_repo.srcs
+
         # Incremental development scenario
         if use_inc:
-            for filename in src_file_repo.all_files:
-                code_block_type = get_markdown_code_block_type(filename)
+            src_files = src_file_repo.all_files
+            # Get the old workspace contained the old codes and old workspace are created in previous CodePlanAndChange
+            old_file_repo = project_repo.git_repo.new_file_repository(relative_path=project_repo.old_workspace)
+            old_files = old_file_repo.all_files
+            # Get the union of the files in the src and old workspaces
+            union_files_list = list(set(src_files) | set(old_files))
+            for filename in union_files_list:
                 # Exclude the current file from the all code snippets
                 if filename == exclude:
                     # If the file is in the old workspace, use the old code
                     # Exclude unnecessary code to maintain a clean and focused main.py file, ensuring only relevant and
                     # essential functionality is included for the project’s requirements
-                    if filename != "main.py":
+                    if filename in old_files and filename != "main.py":
                         # Use old code
-                        doc = await src_file_repo.get(filename=filename)
+                        doc = await old_file_repo.get(filename=filename)
                     # If the file is in the src workspace, skip it
                     else:
                         continue
-                    codes.insert(
-                        0, f"### The name of file to rewrite: `{filename}`\n```{code_block_type}\n{doc.content}```\n"
-                    )
-                    logger.info(f"Prepare to rewrite `{filename}`")
+                    codes.insert(0, f"-----Now, {filename} to be rewritten\n```{doc.content}```\n=====")
                 # The code snippets are generated from the src workspace
                 else:
                     doc = await src_file_repo.get(filename=filename)
                     # If the file does not exist in the src workspace, skip it
                     if not doc:
                         continue
-                    codes.append(f"### File Name: `{filename}`\n```{code_block_type}\n{doc.content}```\n\n")
+                    codes.append(f"----- {filename}\n```{doc.content}```")
 
         # Normal scenario
         else:
@@ -229,7 +225,6 @@ class WriteCodeLocal(Action):
                 doc = await src_file_repo.get(filename=filename)
                 if not doc:
                     continue
-                code_block_type = get_markdown_code_block_type(filename)
-                codes.append(f"### File Name: `{filename}`\n```{code_block_type}\n{doc.content}```\n\n")
+                codes.append(f"----- {filename}\n```{doc.content}```")
 
         return "\n".join(codes)

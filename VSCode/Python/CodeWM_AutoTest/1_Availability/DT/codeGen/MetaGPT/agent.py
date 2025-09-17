@@ -5,9 +5,25 @@
 # description: 用MetaGPT生成代码工程的代理脚本
 # MetaGPT version: 0.8.2
 
+import metagpt, importlib, traceback, sys
+print("metagpt from:", metagpt.__file__)
+try:
+    from metagpt import __version__
+    print("metagpt version:", __version__)
+except Exception as e:
+    print("no __version__", e)
+
+def chk_cfg(cfg, name):
+    llm = getattr(cfg, "llm", None)
+    print(f"[CHECK] {name}:",
+          "OK" if (llm and getattr(llm, "model", None) and getattr(llm, "base_url", None) is not None) else "MISSING",
+          getattr(llm, "api_type", None),
+          getattr(llm, "base_url", None),
+          getattr(llm, "model", None))
+
 #=====================================基础环境配置=====================================#
 import os
-os.chdir("/home/zhaorz/project/CodeWM/sweet-watermark/DT/workspace")
+# os.chdir("/home/zhaorz/project/CodeWM/sweet-watermark/DT/workspace")
 
 # 1) 让官方 OpenAI 走代理（按你的梯子改端口）
 os.environ["HTTPS_PROXY"] = os.environ.get("HTTPS_PROXY", "http://127.0.0.1:7890")
@@ -60,6 +76,26 @@ async def main():
             local_vllm.llm.request_timeout = max(getattr(local_vllm.llm, "request_timeout", 0) or 0, 1200)
     except Exception:
         pass
+    
+    chk_cfg(gpt_openai, "gpt_openai")
+    chk_cfg(local_vllm, "local_vllm")
+    
+    # # A. 云端（如果你要用 OpenAI 角色）
+    # gpt_openai = Config(llm={
+    #     "type": "openai",
+    #     "base_url": "https://api.chatanywhere.tech/v1",
+    #     "api_key": "sk-5pzatlsS3ukKWKdQ8TW40Z5BhnS8UW5rEcdzeSndTGxvmKH9",
+    #     "model": "gpt-4o",     # 你可换成自己可用的
+    # })
+
+    # # B. 本地 vLLM（Engineer 用）
+    # local_vllm = Config(llm={
+    #     "type": "open_llm",                 # 多数本地端点走 OpenAI 兼容协议
+    #     "base_url": "http://127.0.0.1:8000/v1",
+    #     "api_key": "EMPTY",               # 占位
+    #     "model": "Qwen/Qwen2.5-Coder-32B-Instruct",  # 你的本地模型名
+    #     "timeout": 1200,
+    # })
     
     # 其它角色
     pm, arch, pmgr = ProductManager(config=gpt_openai), Architect(config=gpt_openai), ProjectManager(config=gpt_openai)
