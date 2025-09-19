@@ -55,11 +55,24 @@ async def main():
     except Exception:
         pass
     
+    xargs = {
+        "temperature": 0.0,
+        "max_tokens": 4096,
+        "parallel": True,
+        "internal_processor_names": [],
+        "external_processor_names": ["sweet"],
+        "external_processor_params": {
+            "sweet": {"gamma": 0.7, "delta": 2, "entropy_threshold": 0.85},
+            "wllm": {"gamma": 0.4, "delta": 1},
+        },
+    }
+    
     # 其它角色
     pm, arch, pmgr = ProductManager(config=gpt_openai), Architect(config=gpt_openai), ProjectManager(config=gpt_openai)
     # 工程师用派生类（内部已把写码动作固定到本地）
     eng = Engineer(config=local_vllm)
     # eng = DataInterpreter(config=local_vllm)
+    eng.llm.config.__dict__["xargs"] = xargs
 
     team = Team(env=Environment(desc=prompts.java.snakegame.desc), roles=[pm, arch, pmgr, eng])
     idea = prompts.java.snakegame.idea

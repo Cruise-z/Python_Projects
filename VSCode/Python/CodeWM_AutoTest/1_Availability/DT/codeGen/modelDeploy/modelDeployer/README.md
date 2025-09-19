@@ -6,14 +6,14 @@
 
 ### 常规
 ```bash
-LOG_REQ_BODY=1 LOG_REQ_BODY_BYTES=8192 SERVER_DO_SAMPLE=1 SAMPLING_MODE=lenient_openai uvicorn server:app --host 0.0.0.0 --port 8000
+CUDA_VISIBLE_DEVICES=0 LOG_REQ_BODY=1 LOG_REQ_BODY_BYTES=8192 SERVER_DO_SAMPLE=1 SAMPLING_MODE=lenient_openai uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
 
 
 ### DEBUG启动：
 ```bash
-LOG_REQ_BODY=1 LOG_REQ_BODY_BYTES=8192 SERVER_DO_SAMPLE=1 SAMPLING_MODE=lenient_openai \
+CUDA_VISIBLE_DEVICES=0 LOG_REQ_BODY=1 LOG_REQ_BODY_BYTES=8192 SERVER_DO_SAMPLE=1 SAMPLING_MODE=lenient_openai \
 uvicorn server:app \
   --host 0.0.0.0 --port 8000 \
   --http httptools \
@@ -27,6 +27,7 @@ uvicorn server:app \
 
 ### 单 worker，超时都拉长
 ```bash
+CUDA_VISIBLE_DEVICES=0 LOG_REQ_BODY=1 LOG_REQ_BODY_BYTES=8192 SERVER_DO_SAMPLE=1 SAMPLING_MODE=lenient_openai \
 gunicorn server:app \
   -k uvicorn.workers.UvicornWorker \
   -w 1 -b 0.0.0.0:8000 \

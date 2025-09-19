@@ -233,31 +233,43 @@ class BaseLLM(ABC):
     async def acompletion_text_local(
         self, messages: list[dict], stream: bool = False, timeout: int = USE_CONFIG_TIMEOUT
     ) -> tuple[str, str]:
+        #! 工具函数
+        def _deep_merge(dst: dict, src: dict) -> dict:
+            for k, v in src.items():
+                if k in PROTECTED:
+                    continue
+                if isinstance(v, dict) and isinstance(dst.get(k), dict):
+                    _deep_merge(dst[k], v)
+                else:
+                    dst[k] = v
+            return dst
+        #! 主函数逻辑
         """Asynchronous version of completion. Return str."""
         import httpx  # 局部导入，避免改动全局
         # 读取配置（若不存在则给默认值，避免属性缺失报错）
         model = getattr(self.config, "model", None) or getattr(self, "model", "Qwen/Qwen2.5-Coder-32B-Instruct")
         base_url = (getattr(self.config, "base_url", None) or "http://127.0.0.1:8000/v1").rstrip("/")
         api_key = getattr(self.config, "api_key", None) or "EMPTY"
-        payload = {
-            "model": model,
-            "messages": messages,  # 直接使用入参
-            "temperature": 0.0,
-            "max_tokens": 4096,
-            "parallel": True,
-            "internal_processor_names": [],
-            "external_processor_names": ["sweet"],
-            "external_processor_params": {
-                "sweet": {"gamma": 0.7, "delta": 2, "entropy_threshold": 0.85},
-                "wllm": {"gamma": 0.4, "delta": 1},
-            },
-        }
         # 你如果未来要支持流式，可在此根据 stream 加 payload["stream"]=True 并按 SSE 解析
         url = f"{base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+        # 默认值（顶层没给时）
+        payload = {
+            "model": model,
+            "messages": messages,  # 直接使用入参
+            "temperature": 0.0,
+            "max_tokens": 8192,
+            "parallel": False,
+            "internal_processor_names": [],
+        }
+        PROTECTED = {"model", "messages"}
+        cfg_xargs = getattr(self.config, "xargs", None)
+        if isinstance(cfg_xargs, dict):
+            _deep_merge(payload, cfg_xargs)
+        
         # 使用 MetaGPT 原有的超时获取逻辑
         client_timeout = self.get_timeout(timeout)
 
@@ -267,7 +279,10 @@ class BaseLLM(ABC):
             data = resp.json()
 
         # 维持原行为：把“原始响应对象”传给解析函数
-        return self.get_choice_text_local(data, 0), self.get_choice_text_local(data, 1)
+        if payload["parallel"]:
+            return self.get_choice_text_local(data, 0), self.get_choice_text_local(data, 1)
+        else:
+            return self.get_choice_text_local(data, 0), ""
 
     def get_choice_text(self, rsp: dict) -> str:
         """Required to provide the first text of choice"""
