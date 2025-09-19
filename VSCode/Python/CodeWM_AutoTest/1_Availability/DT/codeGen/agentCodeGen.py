@@ -59,6 +59,7 @@ async def main():
         "temperature": 0.0,
         "max_tokens": 4096,
         "parallel": True,
+        "rng_seed": 123456,
         "internal_processor_names": [],
         "external_processor_names": ["sweet"],
         "external_processor_params": {

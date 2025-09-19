@@ -51,6 +51,7 @@ curl --noproxy 127.0.0.1,localhost http://127.0.0.1:8000/v1/chat/completions \
     "messages":[{"role":"user","content":"讲讲BFS与DFS差异并举例"}],
     "parallel": true,
     "temperature":0.0,
+    "rng_seed": 123456,
     "internal_processor_names":[],
     "external_processor_names":["sweet"],
     "external_processor_params": {
@@ -66,9 +67,10 @@ curl --noproxy 127.0.0.1,localhost http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model":"Qwen/Qwen2.5-Coder-32B-Instruct",
-    "messages":[{"role":"user","content":"用一句话介绍BFS"}],
+    "messages":[{"role":"user","content":"讲讲BFS与DFS差异并举例"}],
     "temperature": 0,
-    "max_tokens": 64
+    "rng_seed": 123456,
+    "max_tokens": 2048
   }' | jq .
 ```
 

@@ -18,8 +18,6 @@ from transformers import (
 from transformers.generation.stopping_criteria import (
     StoppingCriteriaList, MaxLengthCriteria
 )
-from contextlib import contextmanager
-from threading import Lock
 
 # ================= 配置项(是否开启采样/双路同配置) =================
 import os
@@ -72,9 +70,7 @@ except Exception:
     pass
 
 # 供你的处理器构造使用的词表（与本服务 tokenizer 完全一致）
-# 覆盖到外置 builder 的 vocab 参数：保证是 0..N-1 的连续 id
-# 使用连续 id 列表，避免 dict.values() 顺序不定导致 builder 误用
-vocab_ids: List[int] = list(range(len(tokenizer)))
+vocab_ids: List[int] = list(tokenizer.get_vocab().values())
 
 # ================= 处理器注册表 & 注册函数 =================
 # 你可以按自己的喜好把“HF内置水印/你自定义的水印”注册到任意一侧
@@ -395,31 +391,74 @@ def healthz():
     """简单健康检查：可用于 LB 探活。"""
     return {"status": "ok", "model": MODEL_ID}
 
-@contextmanager
-def _seed_context(seed: Optional[int], device: torch.device):
+def _is_cache_obj(pkv) -> bool:
     """
-    让 generate 的采样可复现、且对并发安全：
-    - 使用全局锁避免多个请求同时改动全局 RNG；
-    - 使用 torch.random.fork_rng 在作用域内分叉/恢复 RNG 状态；
+    判断是否为 transformers 新式 Cache 对象（例如 StaticCache/DynamicCache）。
+    这类对象通常具备 get_seq_length()/get_max_capacity 等方法。
     """
-    if seed is None:
-        yield
-        return
-    if device.type == "cuda" and torch.cuda.is_available():
-        # 为了兼容 accelerate 的多卡切分，这里直接 fork 全部 GPU 的 RNG 状态
-        devices = list(range(torch.cuda.device_count()))
-    else:
-        devices = []
-    # 全局 RNG 锁（避免跨请求竞争导致的 RNG 污染）
-    global _RNG_LOCK
-    with _RNG_LOCK, torch.random.fork_rng(devices=devices, enabled=True):
-        torch.manual_seed(int(seed))
-        if device.type == "cuda" and torch.cuda.is_available():
-            torch.cuda.manual_seed_all(int(seed))
-        yield
+    if pkv is None:
+        return False
+    cls_name = pkv.__class__.__name__.lower()
+    return hasattr(pkv, "get_seq_length") or cls_name.endswith("cache")
+    
+def _prefill_and_expand_kv(input_ids: torch.Tensor,
+                           attn: torch.Tensor,
+                           times: int = 2):
+    """
+    先做一次 batch=1 的 prefill，尝试把 past_key_values 沿 batch 维复制为多路；
+    如果复制失败（例如遇到新式 Cache 抽象或非张量结构），
+    则回退到 batch=times 的 prefill（多算一次 prompt，但确保兼容性）。
+    返回：(pkv_batched, last_logits_batched[times, vocab], used_fallback: bool)
+    """
+    prefill = model(input_ids=input_ids, attention_mask=attn, use_cache=True)
+    pkv = prefill.past_key_values
+    last_logits_1 = prefill.logits[:, -1, :]  # [1, vocab]
+    # 新式 Cache：不要复制，直接回退到 batch=times 的 prefill（稳定且与模型期望一致）
+    if _is_cache_obj(pkv):
+        ids2 = input_ids.repeat(times, 1).contiguous()
+        attn2 = attn.repeat(times, 1).contiguous()
+        prefill2 = model(input_ids=ids2, attention_mask=attn2, use_cache=True)
+        pkv2 = prefill2.past_key_values
+        last_logits_batched = prefill2.logits[:, -1, :]  # [times, vocab]
+        return pkv2, last_logits_batched, True
 
-# 全局 RNG 锁
-_RNG_LOCK = Lock()
+    # 旧式 tuple/list：尝试复制 KV 的 batch 维
+    try:
+        pkv_batched = _repeat_pkv(pkv, times=times)
+        last_logits_batched = last_logits_1.repeat(times, 1)
+        return pkv_batched, last_logits_batched, False
+    except Exception:
+        # 最终兜底：直接做 batch=times 的 prefill
+        pass
+
+    # 兜底
+    ids2 = input_ids.repeat(times, 1).contiguous()
+    attn2 = attn.repeat(times, 1).contiguous()
+    prefill2 = model(input_ids=ids2, attention_mask=attn2, use_cache=True)
+    pkv2 = prefill2.past_key_values
+    last_logits_batched = prefill2.logits[:, -1, :]  # [times, vocab]
+    return pkv2, last_logits_batched, True
+
+def _repeat_pkv(pkv, times: int = 2):
+    """
+    将单路 past_key_values 沿 batch 维复制为多路。
+    兼容大多数 HF 模型的 pkv 结构：tuple[layer] -> tuple[tensor...]
+    """
+    if pkv is None:
+        return None
+    # 仅允许对旧式 tuple/list 结构复制；新式 Cache 直接抛错，触发回退逻辑
+    if not isinstance(pkv, (tuple, list)):
+        raise TypeError(f"repeat_pkv expects legacy tuple/list, got {type(pkv)}")
+    rep_layers = []
+    # 某些实现返回 list；统一按可迭代层处理
+    for layer in pkv:  # type: ignore[assignment]
+        if not isinstance(layer, (tuple, list)):
+            raise TypeError("unexpected PKV layer type; expected tuple/list of tensors")
+        rep_tensors = []
+        for t in layer:
+            rep_tensors.append(torch.repeat_interleave(t, repeats=times, dim=0) if torch.is_tensor(t) else t)
+        rep_layers.append(tuple(rep_tensors))
+    return tuple(rep_layers)
 
 def _prep_inputs(messages: List[Dict[str, str]]) -> Dict[str, torch.Tensor]:
     chat_text = tokenizer.apply_chat_template(
@@ -442,6 +481,26 @@ def _safe_get_logits_processor(gen_cfg, prompt_len: int) -> LogitsProcessorList:
     except Exception:
         return LogitsProcessorList([])
 
+def _safe_get_logits_warper(gen_cfg) -> LogitsProcessorList:
+    """
+    兼容获取 HF 的 warpers；若模型无对应私有方法则根据 temperature / top_p 手动构建。
+    """
+    try:
+        return model._get_logits_warper(gen_cfg)
+    except Exception:
+        warpers = LogitsProcessorList([])
+        if getattr(gen_cfg, "do_sample", False):
+            # temperature
+            temp = float(getattr(gen_cfg, "temperature", 1.0) or 1.0)
+            if abs(temp - 1.0) > 1e-6:
+                warpers.append(TemperatureLogitsWarper(temp))
+            # top_p
+            tp = float(getattr(gen_cfg, "top_p", 1.0) or 1.0)
+            if 0.0 < tp < 1.0:
+                warpers.append(TopPLogitsWarper(tp))
+            # 如需支持 top_k，可在此按需追加 TopKLogitsWarper
+        return warpers
+
 def _safe_get_stopping_criteria(gen_cfg) -> StoppingCriteriaList:
     """
     兼容获取 HF 的 stopping_criteria；若模型无对应私有方法则返回空列表。
@@ -450,6 +509,27 @@ def _safe_get_stopping_criteria(gen_cfg) -> StoppingCriteriaList:
         return model._get_stopping_criteria(gen_cfg, None)
     except Exception:
         return StoppingCriteriaList([])
+    
+def _stopping_met(stopping_criteria: StoppingCriteriaList,
+                  input_ids: torch.Tensor,
+                  scores: Optional[torch.Tensor] = None) -> bool:
+    """
+    统一把 StoppingCriteriaList 的返回结果转为 bool。
+    - 标准实现返回 bool；
+    - 若某些自定义 criterion 返回 shape=[B] 的 BoolTensor，则归并 any()；
+    - 其它可布尔化对象用 bool()。
+    出错时安全地视为未触发停止。
+    """
+    try:
+        out = stopping_criteria(input_ids, scores)
+        if isinstance(out, bool):
+            return out
+        if torch.is_tensor(out):
+            # 兼容形状既可能是 0-d 也可能是 1-d（batch 维）
+            return bool(out.any().item())
+        return bool(out)
+    except Exception:
+        return False
 
 @torch.inference_mode()
 def _build_hf_components(
@@ -478,190 +558,369 @@ def _build_hf_components(
 
     # 注意：HF 的私有方法在部分模型上可能不存在，这里做安全回退
     hf_lp = _safe_get_logits_processor(gen_cfg, prompt_len)
+    hf_warpers = _safe_get_logits_warper(gen_cfg)
     stopping_criteria = _safe_get_stopping_criteria(gen_cfg)
     # 若未包含 MaxLengthCriteria，则补齐一条（以 prompt_len+max_new_tokens 为上限）
     has_maxlen = any(isinstance(c, MaxLengthCriteria) for c in stopping_criteria)
     if not has_maxlen:
         stopping_criteria.append(MaxLengthCriteria(max_length=max_len))
-    return gen_cfg, hf_lp, None, stopping_criteria  # warpers 由 HF 基于 kwargs 内部构建
+    return gen_cfg, hf_lp, hf_warpers, stopping_criteria
 
-class BatchRouteProcessor(LogitsProcessor):
+@torch.inference_mode()
+def _gen_internal_like_parallel(
+    inputs: Dict[str, torch.Tensor],
+    lp_internal: Optional[LogitsProcessorList],
+    temperature: float,
+    top_p: float,
+    max_new_tokens: int,
+    do_sample: bool = SERVER_DO_SAMPLE,
+    rng_seed: Optional[int] = None,
+) -> tuple[str, int, int, int]:
     """
-    对 batch 中的每一行分别应用你的处理器链：
-      - 行0：仅 internal
-      - 行1：internal + external
-    其余行（若未来扩展）同样可以按需路由。
+    单路生成但**完全对齐**并行里的“internal-only”分路：
+      - 共享相同的 HF 子模块（hf_logits_processor + hf_warpers）
+      - 步进/终止与并行相同（增量一步一步 forward）
+      - 采样使用与并行一致的 U(0,1) CDF 取样（通过“自耦合”）
     """
-    def __init__(self,
-                 lp_internal: Optional[LogitsProcessorList],
-                 lp_external: Optional[LogitsProcessorList],
-                 external_index: int = 1):
-        super().__init__()
-        self.lp_internal = lp_internal or LogitsProcessorList([])
-        self.lp_external = lp_external or LogitsProcessorList([])
-        self.external_index = external_index
+    device = next(model.parameters()).device
+    input_ids = inputs["input_ids"].to(device)  # [1, L]
+    attn = inputs.get("attention_mask", None)
+    if attn is None:
+        attn = torch.ones_like(input_ids, dtype=torch.long, device=device)
+    else:
+        attn = attn.to(device)
 
-    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
-        out = scores
-        B = out.shape[0]
-        for b in range(B):
-            s = out[b:b+1, :]
-            ids = input_ids[b:b+1, :]
-            for p in self.lp_internal:
-                s = p(ids, s)
-            if b == self.external_index and len(self.lp_external) > 0:
-                for p in self.lp_external:
-                    s = p(ids, s)
-            out[b:b+1, :] = s
-        return out
+    prompt_len = int(input_ids.shape[1])
+    try:
+        want = int(max_new_tokens or 0)
+    except Exception:
+        want = 0
+    max_new_tokens = _cap_max_new_tokens(prompt_len, want)
+    if max_new_tokens <= 0:
+        return "", prompt_len, 0, prompt_len
 
-def _count_new_and_reason(seqs: torch.LongTensor,
-                          prompt_len: int,
-                          capped: int,
-                          eos_ids: List[int],
-                          pad_id: Optional[int]) -> tuple[List[int], List[str]]:
+    # 归一化采样参数，并据此构造 HF 子模块
+    do_sample, temperature, top_p = normalize_sampling_args(do_sample, temperature, top_p)
+    _, hf_lp, hf_warpers, stopping_criteria = _build_hf_components(
+        prompt_len, do_sample, temperature, top_p, max_new_tokens
+    )
+    lp0_full = LogitsProcessorList(list(hf_lp) + list(lp_internal or []))
+
+    # 共享随机源（与并行一致的种子推导）
+    gen = None
+    if do_sample:
+        gen = torch.Generator(device=device)
+        seed = int(torch.sum(input_ids).item() % (2**31 - 1)) if rng_seed is None else int(rng_seed)
+        gen.manual_seed(seed)
+
+    # 预填充
+    pkv, last_logits_b1, _ = _prefill_and_expand_kv(input_ids, attn, times=1)
+    cur_ids = input_ids.clone()
+    cur_attn = attn.clone()
+
+    # 终止 token
+    eos_token_id = model.generation_config.eos_token_id
+    eos_ids: List[int] = []
+    if isinstance(eos_token_id, int) and eos_token_id >= 0:
+        eos_ids = [eos_token_id]
+    elif isinstance(eos_token_id, (list, tuple)):
+        eos_ids = [int(x) for x in eos_token_id if x is not None]
+
+    finished = False
+    comp_tok = 0
+
+    def _apply(proc: Optional[LogitsProcessorList], ids_ctx: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
+        if proc is not None:
+            scores = proc(ids_ctx, scores)
+        return scores
+
+    # 首步：利用 prefill 的最后时刻 logits
+    scores0 = _apply(lp0_full, cur_ids, last_logits_b1)  # [1,V]
+    if do_sample and len(hf_warpers):
+        scores0 = hf_warpers(cur_ids, scores0)
+    # 自耦合采样（保证与并行 internal-only 完全一致的取样分布/数值路径）
+    tok0, _ = _coupled_pick_from_scores(scores0, scores0, do_sample, generator=gen)
+    comp_tok += 1
+    if eos_ids and int(tok0.item()) in eos_ids:
+        finished = True
+    cur_ids = torch.cat([cur_ids, tok0], dim=1)
+    cur_attn = torch.cat([cur_attn, torch.ones((1,1), dtype=cur_attn.dtype, device=device)], dim=1)
+    # HF 停止准则（长度等）检查
+    if stopping_criteria(cur_ids, None):
+        finished = True
+
+    steps = 1
+    while steps < max_new_tokens:
+        if finished:
+            break
+        step_in = cur_ids[:, -1:].contiguous()
+        outputs = model(
+            input_ids=step_in,
+            attention_mask=cur_attn,
+            past_key_values=pkv,
+            use_cache=True
+        )
+        pkv = outputs.past_key_values
+        logits = outputs.logits[:, -1, :]  # [1,V]
+        scores0 = _apply(lp0_full, cur_ids, logits)
+        if do_sample and len(hf_warpers):
+            scores0 = hf_warpers(cur_ids, scores0)
+        tok0, _ = _coupled_pick_from_scores(scores0, scores0, do_sample, generator=gen)
+        comp_tok += 1
+        if eos_ids and int(tok0.item()) in eos_ids:
+            finished = True
+        cur_ids = torch.cat([cur_ids, tok0], dim=1)
+        cur_attn = torch.cat([cur_attn, torch.ones((1,1), dtype=cur_attn.dtype, device=device)], dim=1)
+        # HF 停止准则（长度等）检查
+        if stopping_criteria(cur_ids, None):
+            finished = True
+        steps += 1
+
+    text = tokenizer.batch_decode(cur_ids[:, prompt_len:], skip_special_tokens=True)[0]
+    prompt_tok = int(inputs["input_ids"].shape[1])
+    total_tok = prompt_tok + comp_tok
+    return text, prompt_tok, comp_tok, total_tok
+
+@torch.inference_mode()
+def _coupled_pick_from_scores(
+    scores0: torch.Tensor, scores1: torch.Tensor, do_sample: bool, *,
+    generator: Optional[torch.Generator] = None
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    逐样本统计生成长度与 finish_reason（'stop' | 'length'）
-    - 'length': 达到 capped 上限
-    - 'stop'  : 未达上限但已生成 EOS（或其它停止条件被 HF 提前触发）
+    使用“共享随机数”的耦合采样：
+      - do_sample=False ：两路均 argmax（完全一致的确定性规则）
+      - do_sample=True  ：采一个共同的 u~U(0,1)，
+                          分别在各自的概率分布 CDF 上用同一个 u 取样
+    输入形状：scoresX [1, vocab]，返回 token id 形状均为 [1,1]
     """
-    B, T = seqs.shape
-    new_lens, reasons = [], []
-    for b in range(B):
-        new_part = seqs[b, prompt_len:]
-        # —— 优先以“首个 EOS 的位置（含 EOS）”为准，避免 pad==eos 少算 1 —— #
-        new_len = None
-        if eos_ids:  # 仅在确实有 EOS 定义时才做 isin 搜索
-            eos_tensor = torch.tensor(eos_ids, device=new_part.device, dtype=new_part.dtype)
-            # torch.isin: [T] vs [K] -> [T]
-            eos_mask = torch.isin(new_part, eos_tensor)
-            idx = torch.nonzero(eos_mask, as_tuple=False)
-            if idx.numel() > 0:
-                first_eos_pos = int(idx[0].item())  # 0-based
-                new_len = first_eos_pos + 1         # 含 EOS
-        if new_len is None:
-            # 没遇到 EOS，退回“非 pad 计数”或全长
-            if pad_id is not None:
-                new_len = int((new_part != pad_id).sum().item())
-            else:
-                new_len = int(new_part.numel())
-        # 判定 finish_reason
-        if capped > 0 and new_len >= capped:
-            reason = "length"
+    if not do_sample:
+        tok0 = scores0.argmax(dim=-1, keepdim=True)
+        tok1 = scores1.argmax(dim=-1, keepdim=True)
+        return tok0, tok1
+    # softmax -> 概率；注意 float32 计算稳定性
+    p0 = torch.softmax(scores0, dim=-1).to(torch.float32)  # [1,V]
+    p1 = torch.softmax(scores1, dim=-1).to(torch.float32)  # [1,V]
+    # 共享随机数 u
+    if generator is None:
+        u = torch.rand((), device=scores0.device)
+    else:
+        u = torch.rand((), device=scores0.device, generator=generator)
+    # 数值安全：防止极端情况下 u==1 命中越界
+    eps = torch.finfo(p0.dtype).eps
+    u = torch.clamp(u, eps, 1 - eps)
+    # CDF 搜索
+    cdf0 = p0.cumsum(dim=-1).squeeze(0)  # [V]
+    cdf1 = p1.cumsum(dim=-1).squeeze(0)  # [V]
+    # 边界保护：极端数值下 cdf 末尾可能 < 1，searchsorted 可能返回 V
+    i0 = torch.searchsorted(cdf0, u).clamp(max=cdf0.numel() - 1).long().item()
+    i1 = torch.searchsorted(cdf1, u).clamp(max=cdf1.numel() - 1).long().item()
+    return (torch.tensor([[i0]], device=scores0.device, dtype=torch.long),
+            torch.tensor([[i1]], device=scores1.device, dtype=torch.long))
+
+@torch.inference_mode()
+def _dual_sync_generate_internal_base(
+    inputs: Dict[str, torch.Tensor],
+    lp_internal: Optional[LogitsProcessorList],   # 仅“内置”链
+    lp_external: Optional[LogitsProcessorList],   # 仅“外置”链（可 None）
+    temperature: float,
+    top_p: float,
+    max_new_tokens: int,
+    eos_token_id: Optional[Union[int, List[int]]] = None,
+    min_new_tokens: int = 0,
+    do_sample: bool = SERVER_DO_SAMPLE,           # 新增，默认用全局
+    rng_seed: Optional[int] = None,
+) -> tuple[str, str, int, int, int, List[bool]]:
+    """
+    同步分叉并行（以内置处理后的分布作为基准），并避免对 prompt 的重复前向：
+    - 每步只做一次前向，得到 logits；
+    - scores_internal = 内置处理器链(logits) 作为“基准分布”；
+      * internal_only 分支：在 scores_internal 上采样；
+      * internal_plus_external 分支：在 scores_internal.clone() 上再应用“外置链”后采样。
+    - 两路各自推进各自序列（batch=2，共享 KV cache）。
+    返回：(text_internal_only, text_internal_plus_external, prompt_tok, completion_tok_sum, total_tok, finished[List[bool]])
+    """
+    device = next(model.parameters()).device
+    input_ids = inputs["input_ids"].to(device)  # [1, L]
+    attn = inputs.get("attention_mask", None)
+    if attn is None:
+        attn = torch.ones_like(input_ids, dtype=torch.long, device=device)
+    else:
+        attn = attn.to(device)
+        
+    # === 在进入生成循环前，根据模型上下文上限裁剪 max_new_tokens，避免越界 ===
+    prompt_len = int(input_ids.shape[1])
+    try:
+        want = int(max_new_tokens or 0)
+    except Exception:
+        want = 0
+    max_new_tokens = _cap_max_new_tokens(prompt_len, want)
+    if max_new_tokens <= 0:
+        return "", "", prompt_len, 0, prompt_len, [False, False]
+
+    # ====== 预填充阶段（prefill）：优先尝试 KV 复制，失败则回退到 batch=2 prefill ======
+    pkv, last_logits_b2, _used_fallback = _prefill_and_expand_kv(input_ids, attn, times=2)
+
+    # 两路各自保持独立序列，但首步避免重复跑 prompt
+    cur_ids = input_ids.repeat(2, 1).contiguous()   # [2, L]
+    cur_attn = attn.repeat(2, 1).contiguous()       # [2, L]
+
+    # 归一化采样参数 + 复用 HF 子模块
+    do_sample, temperature, top_p = normalize_sampling_args(do_sample, temperature, top_p)
+    _, hf_lp, hf_warpers, stopping_criteria = _build_hf_components(
+        prompt_len, do_sample, temperature, top_p, max_new_tokens
+    )
+    # 拼接两路的处理器链：
+    # 路0（internal-only）：HF 内置 + 你的内置
+    lp0_full = LogitsProcessorList(list(hf_lp) + list(lp_internal or []))
+    # 路1（internal+external）：在 lp0_full 基础上 + 你的外置
+    lp1_full = LogitsProcessorList(list(lp0_full) + list(lp_external or []))
+
+    # 共享随机数发生器（仅用于“耦合采样”）
+    gen = None
+    if do_sample:
+        gen = torch.Generator(device=device)
+        if rng_seed is None:
+            # 默认：基于输入构造一个稳定种子（同一 prompt 可复现）
+            # 注意：不泄露用户内容，仅用 token id 做简单 hash
+            seed = int(torch.sum(input_ids).item() % (2**31 - 1))
         else:
-           reason = "stop"
-        # 若未到上限，进一步看是否包含 EOS（仅用于信息判断，不改变结果）
-        if reason != "length" and eos_ids:
-            # 若确实含有 EOS，保持 'stop'；否则依然 'stop'（可能被其它准则截断）
-            pass
-        new_lens.append(new_len)
-        reasons.append(reason)
-    return new_lens, reasons
+            seed = int(rng_seed)
+        gen.manual_seed(seed)
+    
+    # 终止 token
+    if eos_token_id is None:
+        eos_token_id = model.generation_config.eos_token_id
+    eos_ids: List[int] = []
+    if isinstance(eos_token_id, int) and eos_token_id >= 0:
+        eos_ids = [eos_token_id]
+    elif isinstance(eos_token_id, (list, tuple)):
+        eos_ids = [int(x) for x in eos_token_id if x is not None]
 
-@torch.inference_mode()
-def _hf_generate_single(inputs: Dict[str, torch.Tensor],
-                        lp_internal: Optional[LogitsProcessorList],
-                        temperature: float,
-                        top_p: float,
-                        max_new_tokens: int,
-                        do_sample: bool,
-                        rng_seed: Optional[int]) -> tuple[str, int, int, int, str]:
-    device = next(model.parameters()).device
-    input_ids = inputs["input_ids"].to(device)
-    attn = inputs.get("attention_mask", None)
-    if attn is None:
-        attn = torch.ones_like(input_ids, dtype=torch.long, device=device)
-    else:
-        attn = attn.to(device=device, dtype=torch.long)
-    prompt_len = int(input_ids.shape[1])
-    capped = _cap_max_new_tokens(prompt_len, int(max_new_tokens or 0))
-    if capped <= 0:
-        return "", prompt_len, 0, prompt_len, "stop"
-    do_sample, temperature, top_p = normalize_sampling_args(do_sample, temperature, top_p)
-    _, hf_lp, _, stopping_criteria = _build_hf_components(prompt_len, do_sample, temperature, top_p, capped)
-    final_lp = LogitsProcessorList(list(hf_lp) + list(lp_internal or []))
-    # 在 generate 期间设置全局 RNG（CPU/CUDA）为给定种子，退出后恢复
-    seed_to_use = None
-    if do_sample:
-        seed_to_use = int(torch.sum(input_ids).item() % (2**31 - 1)) if rng_seed is None else int(rng_seed)
-    with _seed_context(seed_to_use, device):
-        out = model.generate(
-            input_ids=input_ids,
-            attention_mask=attn,
-            do_sample=do_sample,
-            temperature=temperature,
-            top_p=top_p,
-            max_new_tokens=capped,
-            logits_processor=final_lp,
-            # 不传 logits_warper，HF 会按 generation_config 内部创建
-            stopping_criteria=stopping_criteria,
-            pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=model.generation_config.eos_token_id,
-            return_dict_in_generate=True,
-        )
-    seqs = out.sequences  # [1, L+new]
-    eos = model.generation_config.eos_token_id
-    eos_ids = [eos] if isinstance(eos, int) else [int(x) for x in (eos or [])]
-    new_lens, reasons = _count_new_and_reason(seqs, prompt_len, capped, eos_ids, tokenizer.pad_token_id)
-    text = tokenizer.batch_decode(seqs[:, prompt_len:], skip_special_tokens=True)[0]
-    comp = new_lens[0]
-    total = prompt_len + comp
-    return text, prompt_len, comp, total, reasons[0]
+    finished = [False, False]
+    # 每路精确的“有效生成 token 计数”（不含对齐复制）
+    comp_tok_each = [0, 0]
+    new_steps = 0  # 步数（两路对齐的步数）
 
-@torch.inference_mode()
-def _hf_generate_parallel(inputs: Dict[str, torch.Tensor],
-                          lp_internal: Optional[LogitsProcessorList],
-                          lp_external: Optional[LogitsProcessorList],
-                          temperature: float,
-                          top_p: float,
-                          max_new_tokens: int,
-                          do_sample: bool,
-                          rng_seed: Optional[int]) -> tuple[str, str, int, int, int, List[str]]:
-    device = next(model.parameters()).device
-    input_ids = inputs["input_ids"].to(device)
-    attn = inputs.get("attention_mask", None)
-    if attn is None:
-        attn = torch.ones_like(input_ids, dtype=torch.long, device=device)
-    else:
-        attn = attn.to(device=device, dtype=torch.long)
-    # batch=2
-    input_b2 = input_ids.repeat(2, 1).contiguous()
-    attn_b2 = attn.repeat(2, 1).contiguous()
-    prompt_len = int(input_ids.shape[1])
-    capped = _cap_max_new_tokens(prompt_len, int(max_new_tokens or 0))
-    if capped <= 0:
-        return "", "", prompt_len, 0, prompt_len, ["stop", "stop"]
-    do_sample, temperature, top_p = normalize_sampling_args(do_sample, temperature, top_p)
-    _, hf_lp, _, stopping_criteria = _build_hf_components(prompt_len, do_sample, temperature, top_p, capped)
-    router = BatchRouteProcessor(lp_internal, lp_external, external_index=1)
-    final_lp = LogitsProcessorList(list(hf_lp) + [router])
-    seed_to_use = None
-    if do_sample:
-        seed_to_use = int(torch.sum(input_ids).item() % (2**31 - 1)) if rng_seed is None else int(rng_seed)
-    with _seed_context(seed_to_use, device):
-        out = model.generate(
-            input_ids=input_b2,
-            attention_mask=attn_b2,
-            do_sample=do_sample,
-            temperature=temperature,
-            top_p=top_p,
-            max_new_tokens=capped,
-            logits_processor=final_lp,
-            # 不传 logits_warper，HF 会按 generation_config 内部创建
-            stopping_criteria=stopping_criteria,
-            pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=model.generation_config.eos_token_id,
-            return_dict_in_generate=True,
+    def _apply(proc: Optional[LogitsProcessorList], ids_ctx: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
+        # ids_ctx: [1, seq], scores: [1, vocab]
+        if proc is not None:
+            scores = proc(ids_ctx, scores)
+        return scores
+
+    # ====== 首步生成（就地对照：内置 vs. 内置+外置；耦合采样）=====
+    logits_b2 = last_logits_b2  # [2, vocab]
+    base0 = _apply(lp0_full, cur_ids[0:1, :], logits_b2[0:1, :])  # [1, vocab]
+    base1 = _apply(lp1_full, cur_ids[1:2, :], logits_b2[1:2, :])  # [1, vocab]
+    # 路0：internal_only
+    scores0 = base0.clone()
+    # 路1：internal_plus_external
+    scores1 = base1.clone()
+    # 统一 warper（复用 HF warpers）
+    if do_sample and len(hf_warpers):
+        scores0 = hf_warpers(cur_ids[0:1, :], scores0)
+        scores1 = hf_warpers(cur_ids[1:2, :], scores1)
+    # ——耦合采样（共享同一个 u）——
+    tok0, tok1 = _coupled_pick_from_scores(scores0, scores1, do_sample, generator=gen)
+    # 计数与终止
+    comp_tok_each[0] += (not finished[0])
+    comp_tok_each[1] += (not finished[1])
+    if eos_ids and int(tok0.item()) in eos_ids:
+        finished[0] = True
+    if eos_ids and int(tok1.item()) in eos_ids:
+        finished[1] = True
+
+    # 拼接与对齐
+    next_ids = torch.cat([tok0, tok1], dim=0)  # [2,1]
+    cur_ids = torch.cat([cur_ids, next_ids], dim=1)
+    cur_attn = torch.cat([cur_attn, torch.ones((2, 1), dtype=cur_attn.dtype, device=device)], dim=1)
+    new_steps = 1
+    # HF 停止准则（长度等）检查
+    if stopping_criteria(cur_ids, None):
+        # 若长度到上限则直接退出；finish_reason 将在返回时按 finished[] 与长度判断设置
+        texts = tokenizer.batch_decode(cur_ids[:, prompt_len:], skip_special_tokens=True)
+        prompt_tok = int(inputs["input_ids"].shape[1])
+        comp_tok_sum = int(comp_tok_each[0] + comp_tok_each[1])
+        total_tok = prompt_tok + comp_tok_sum
+        return texts[0], texts[1], prompt_tok, comp_tok_sum, total_tok, finished
+
+    # ====== 后续增量解码：每步仅以最新 token 做一次 batch=2 前向 ======
+    while new_steps < max_new_tokens:
+        # 终止判定（满足 min_new_tokens 后两路均结束才退出）
+        if all(finished) and new_steps >= min_new_tokens:
+            break
+
+        step_in = cur_ids[:, -1:].contiguous()  # [2,1]
+        outputs = model(
+            input_ids=step_in,
+            attention_mask=cur_attn,
+            past_key_values=pkv,
+            use_cache=True
         )
-    seqs = out.sequences  # [2, L+new]
-    eos = model.generation_config.eos_token_id
-    eos_ids = [eos] if isinstance(eos, int) else [int(x) for x in (eos or [])]
-    new_lens, reasons = _count_new_and_reason(seqs, prompt_len, capped, eos_ids, tokenizer.pad_token_id)
-    texts = tokenizer.batch_decode(seqs[:, prompt_len:], skip_special_tokens=True)
-    prompt_tok = prompt_len
-    comp_sum = int(new_lens[0] + new_lens[1])
-    total_tok = prompt_tok + comp_sum
-    return texts[0], texts[1], prompt_tok, comp_sum, total_tok, reasons
+        pkv = outputs.past_key_values
+        logits = outputs.logits[:, -1, :]   # [2, vocab]
+
+        # 对“每一路各自的上下文”计算这一时刻的“内置基准分布”
+        base0 = _apply(lp0_full, cur_ids[0:1, :], logits[0:1, :])   # [1, vocab]
+        base1 = _apply(lp1_full, cur_ids[1:2, :], logits[1:2, :])   # [1, vocab]
+
+        active0 = not finished[0]
+        active1 = not finished[1]
+
+        scores0 = None
+        scores1 = None
+        if active0:
+            scores0 = base0.clone()
+            if do_sample and len(hf_warpers):
+                scores0 = hf_warpers(cur_ids[0:1, :], scores0)
+        if active1:
+            scores1 = base1.clone()
+            if do_sample and len(hf_warpers):
+                scores1 = hf_warpers(cur_ids[1:2, :], scores1)
+
+        # 统一决策：四种情形
+        if active0 and active1:
+            tok0, tok1 = _coupled_pick_from_scores(scores0, scores1, do_sample, generator=gen)
+        elif active0 and (not active1):
+            # 仅路0继续：用“自耦合”取样，路1冻结
+            tok0, _ = _coupled_pick_from_scores(scores0, scores0, do_sample, generator=gen)
+            tok1 = cur_ids[1:2, -1:].clone()
+        elif (not active0) and active1:
+            # 仅路1继续：用“自耦合”取样，路0冻结
+            tok1, _ = _coupled_pick_from_scores(scores1, scores1, do_sample, generator=gen)
+            tok0 = cur_ids[0:1, -1:].clone()
+        else:
+            # 两路都已结束：保持最后一个 token（用于对齐拼接）
+            tok0 = cur_ids[0:1, -1:].clone()
+            tok1 = cur_ids[1:2, -1:].clone()
+
+        # 记录有效生成 token 与终止
+        if active0:
+            comp_tok_each[0] += 1
+            if eos_ids and int(tok0.item()) in eos_ids:
+                finished[0] = True
+        if active1:
+            comp_tok_each[1] += 1
+            if eos_ids and int(tok1.item()) in eos_ids:
+                finished[1] = True
+
+        # 拼接
+        next_ids = torch.cat([tok0, tok1], dim=0)  # [2,1]
+        cur_ids = torch.cat([cur_ids, next_ids], dim=1)
+        cur_attn = torch.cat([cur_attn, torch.ones((2,1), dtype=cur_attn.dtype, device=device)], dim=1)
+
+        new_steps += 1
+        # HF 停止准则（长度等）检查
+        if stopping_criteria(cur_ids, None):
+            break
+
+
+    texts = tokenizer.batch_decode(cur_ids[:, prompt_len:], skip_special_tokens=True)
+    # 计算token数
+    prompt_tok = int(inputs["input_ids"].shape[1])
+    comp_tok_sum = int(comp_tok_each[0] + comp_tok_each[1])  # 并行两路各自有效 completion token 的“和”
+    total_tok = prompt_tok + comp_tok_sum
+    
+    return texts[0], texts[1], prompt_tok, comp_tok_sum, total_tok, finished
 
 @app.post("/v1/chat/completions")
 async def chat(req: ChatRequest) -> Dict[str, Any]:
@@ -701,19 +960,20 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
         )
 
         try:
-            text_internal, text_both, prompt_tok, comp_tok_sum, total_tok, reasons = await asyncio.to_thread(
-                _hf_generate_parallel,
+            # 放入线程池避免阻塞事件循环；并显式处理 CUDA OOM
+            text_internal, text_both, prompt_tok, comp_tok_sum, total_tok, finished = await asyncio.to_thread(
+                _dual_sync_generate_internal_base,
                 inputs,
                 lp_internal,
                 lp_external,
                 req.temperature,
                 req.top_p,
                 req.max_tokens,
-                req._do_sample,
-                req.rng_seed,
+                model.generation_config.eos_token_id,
+                0,
+                do_sample=req._do_sample,
+                rng_seed=req.rng_seed,
             )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"bad_sampling_args: {e}") from e
         except torch.cuda.OutOfMemoryError as e:
             try:
                 torch.cuda.empty_cache()
@@ -724,8 +984,9 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
             # 统一转换为 500，避免栈追踪暴露
             raise HTTPException(status_code=500, detail=f"generation_error: {e.__class__.__name__}: {e}") from e
         
-        # 逐路 finish_reason：基于 capped 与是否触顶长度（详见 _count_new_and_reason）
-        fr_internal, fr_both = reasons[0], reasons[1]
+        # 逐路精确设置 finish_reason：到达 EOS => "stop"；达到长度上限 => "length"
+        fr_internal = "stop" if finished[0] else "length"
+        fr_both = "stop" if finished[1] else "length"
 
         return {
             "id": f"chatcmpl-{int(time.time()*1000)}",
@@ -753,25 +1014,25 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
             }
         }
 
-    # 非并行：使用纯 generate（batch=1），仅拼接 **你的内置链**（与并行 internal-only 对齐）
+    # 非并行：按你给的列表统一拼接（可只内置、只外置、或内外兼容）
+    # 为了保证“单路 == 并行 internal-only 路径”，这里仅拼接 **你的内置链**，并复用 HF 子模块，
+    # 不直接调用 model.generate。
     lp_internal_only = _resolve_lp_list(
         internal_names=req.internal_processor_names,
         external_names=None,
         mode="internal_only",
     )
     try:
-        text, prompt_tok, comp_tok, total_tok, fr = await asyncio.to_thread(
-            _hf_generate_single,
+        text, prompt_tok, comp_tok, total_tok = await asyncio.to_thread(
+            _gen_internal_like_parallel,
             inputs,
             lp_internal_only,
             req.temperature,
             req.top_p,
             req.max_tokens,
-            req._do_sample,
-            req.rng_seed,
+            do_sample=req._do_sample,
+            rng_seed=req.rng_seed,
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"bad_sampling_args: {e}") from e
     except torch.cuda.OutOfMemoryError as e:
         try:
             torch.cuda.empty_cache()
@@ -780,7 +1041,15 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=503, detail="generation_error: cuda_oom") from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"generation_error: {e.__class__.__name__}: {e}") from e
-    # fr 已在 _hf_generate_single 内部给出
+    # 更准确的 finish_reason：与裁剪后的 max_new_tokens 比较
+    try:
+        prompt_len = int(inputs["input_ids"].shape[1])
+        want = int(req.max_tokens or 0)
+    except Exception:
+        prompt_len, want = int(inputs["input_ids"].shape[1]), 0
+    capped = _cap_max_new_tokens(prompt_len, want)
+    # comp_tok == capped → 达到长度上限，否则视为正常停止
+    fr = "length" if capped > 0 and comp_tok >= capped else "stop"
     return {
         "id": f"chatcmpl-{int(time.time()*1000)}",
         "object": "chat.completion",
