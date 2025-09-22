@@ -45,8 +45,8 @@ from metagpt.environment import Environment
 async def main():
     
     # 1) 加载两套配置（与官方示例一致）
-    gpt_openai = Config.default()                      # 来自 ~/.metagpt/config2.yaml
-    local_vllm = Config.from_home("local_vllm.yaml")   # 来自 ~/.metagpt/local_vllm.yaml
+    local_vllm = Config.default()                      # 来自 ~/.metagpt/config2.yaml
+    gpt_openai = Config.from_home("openai.yaml")       # 来自 ~/.metagpt/local_vllm.yaml
     try:
         local_vllm.llm.timeout = max(getattr(local_vllm.llm, "timeout", 0) or 0, 1200)
         # 某些提交使用 request_timeout 字段：
