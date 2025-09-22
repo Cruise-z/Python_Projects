@@ -12,14 +12,13 @@ import logging
 from starlette.middleware.base import BaseHTTPMiddleware
 from transformers import (
     AutoModelForCausalLM, AutoTokenizer,
-    LogitsProcessorList, TopPLogitsWarper, TopKLogitsWarper, TemperatureLogitsWarper,
+    LogitsProcessorList,
     LogitsProcessor
 )
 from transformers.generation.stopping_criteria import (
     StoppingCriteriaList, MaxLengthCriteria
 )
-from contextlib import contextmanager
-from threading import Lock
+import threading
 
 # ================= 配置项(是否开启采样/双路同配置) =================
 import os
@@ -44,6 +43,27 @@ SAMPLING_MODE = _as_mode(os.getenv("SAMPLING_MODE", "lenient_openai"))
 
 # 是否强制在并行模式下提供 external_processor_names（避免“两路同配置”的误用）
 REQUIRE_EXTERNAL_IN_PARALLEL = _as_bool(os.getenv("REQUIRE_EXTERNAL_IN_PARALLEL", "0"))
+
+# 并行返回 usage 统计口径：1=每个 choice 单独统计（默认）；0=旧口径（合并统计）
+USAGE_PER_CHOICE = _as_bool(os.getenv("USAGE_PER_CHOICE", "1"))
+
+# 在不支持 `generator=` 的模型上启用回退；默认启用
+ALLOW_GENERATOR_FALLBACK = _as_bool(os.getenv("ALLOW_GENERATOR_FALLBACK", "1"))
+
+# RNG 种子策略（与上传文档建议保持一致）：默认不为未传 seed 派生种子，行为与 HF 一致；
+# 如需兼容旧行为，可设 RNG_SEED_FALLBACK=derived
+RNG_SEED_FALLBACK = os.getenv("RNG_SEED_FALLBACK", "none").strip().lower()
+
+# （可选）极致确定性：设置 DETERMINISTIC=1 开启；会牺牲性能
+if _as_bool(os.getenv("DETERMINISTIC", "0")):
+    try:
+        torch.use_deterministic_algorithms(True)
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":16:8")
+        import torch.backends.cudnn as _cudnn
+        _cudnn.benchmark = False
+        _cudnn.deterministic = True
+    except Exception as _e:
+        print(f"[server] DETERMINISTIC setup failed: {_e}")
 
 # ====== 原始请求体打印控制（默认关闭，按需开启）======
 # LOG_REQ_BODY=1 开启打印；LOG_REQ_BODY_BYTES 控制最多打印多少原始字节
@@ -213,6 +233,22 @@ def _resolve_lp_list(
     if not chain:
         return None
     return LogitsProcessorList(chain)
+
+_GLOBAL_RNG_LOCK = threading.Lock()
+
+def _pick_seed(rng_seed: Optional[int], input_ids: torch.LongTensor) -> Optional[int]:
+    """
+    选择用于本次采样的种子：
+      - 传入 rng_seed → 直接使用；
+      - 否则按 RNG_SEED_FALLBACK：
+          * 'derived' → 从 prompt 求和派生一个稳定 seed；
+          * 其它 → 返回 None（与 HF 默认一致，不传 generator）
+    """
+    if rng_seed is not None:
+        return int(rng_seed)
+    if RNG_SEED_FALLBACK == "derived":
+        return int(torch.sum(input_ids).item() % (2**31 - 1))
+    return None
 
 # ===== 在此处插入：自动加载 uiAPI（可选）=====
 try:
@@ -395,37 +431,11 @@ def healthz():
     """简单健康检查：可用于 LB 探活。"""
     return {"status": "ok", "model": MODEL_ID}
 
-@contextmanager
-def _seed_context(seed: Optional[int], device: torch.device):
-    """
-    让 generate 的采样可复现、且对并发安全：
-    - 使用全局锁避免多个请求同时改动全局 RNG；
-    - 使用 torch.random.fork_rng 在作用域内分叉/恢复 RNG 状态；
-    """
-    if seed is None:
-        yield
-        return
-    if device.type == "cuda" and torch.cuda.is_available():
-        # 为了兼容 accelerate 的多卡切分，这里直接 fork 全部 GPU 的 RNG 状态
-        devices = list(range(torch.cuda.device_count()))
-    else:
-        devices = []
-    # 全局 RNG 锁（避免跨请求竞争导致的 RNG 污染）
-    global _RNG_LOCK
-    with _RNG_LOCK, torch.random.fork_rng(devices=devices, enabled=True):
-        torch.manual_seed(int(seed))
-        if device.type == "cuda" and torch.cuda.is_available():
-            torch.cuda.manual_seed_all(int(seed))
-        yield
-
-# 全局 RNG 锁
-_RNG_LOCK = Lock()
-
 def _prep_inputs(messages: List[Dict[str, str]]) -> Dict[str, torch.Tensor]:
     chat_text = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
-    return tokenizer([chat_text], return_tensors="pt").to(model.device)
+    return tokenizer([chat_text], return_tensors="pt")
 
 def _safe_get_logits_processor(gen_cfg, prompt_len: int) -> LogitsProcessorList:
     """
@@ -484,36 +494,6 @@ def _build_hf_components(
     if not has_maxlen:
         stopping_criteria.append(MaxLengthCriteria(max_length=max_len))
     return gen_cfg, hf_lp, None, stopping_criteria  # warpers 由 HF 基于 kwargs 内部构建
-
-class BatchRouteProcessor(LogitsProcessor):
-    """
-    对 batch 中的每一行分别应用你的处理器链：
-      - 行0：仅 internal
-      - 行1：internal + external
-    其余行（若未来扩展）同样可以按需路由。
-    """
-    def __init__(self,
-                 lp_internal: Optional[LogitsProcessorList],
-                 lp_external: Optional[LogitsProcessorList],
-                 external_index: int = 1):
-        super().__init__()
-        self.lp_internal = lp_internal or LogitsProcessorList([])
-        self.lp_external = lp_external or LogitsProcessorList([])
-        self.external_index = external_index
-
-    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
-        out = scores
-        B = out.shape[0]
-        for b in range(B):
-            s = out[b:b+1, :]
-            ids = input_ids[b:b+1, :]
-            for p in self.lp_internal:
-                s = p(ids, s)
-            if b == self.external_index and len(self.lp_external) > 0:
-                for p in self.lp_external:
-                    s = p(ids, s)
-            out[b:b+1, :] = s
-        return out
 
 def _count_new_and_reason(seqs: torch.LongTensor,
                           prompt_len: int,
@@ -576,16 +556,22 @@ def _hf_generate_single(inputs: Dict[str, torch.Tensor],
     prompt_len = int(input_ids.shape[1])
     capped = _cap_max_new_tokens(prompt_len, int(max_new_tokens or 0))
     if capped <= 0:
-        return "", prompt_len, 0, prompt_len, "stop"
+        # 若用户请求了正数但被上限裁剪为0，更符合语义的是返回 "length"
+        reason = "length" if int(max_new_tokens or 0) > 0 else "stop"
+        return "", prompt_len, 0, prompt_len, reason
     do_sample, temperature, top_p = normalize_sampling_args(do_sample, temperature, top_p)
     _, hf_lp, _, stopping_criteria = _build_hf_components(prompt_len, do_sample, temperature, top_p, capped)
     final_lp = LogitsProcessorList(list(hf_lp) + list(lp_internal or []))
-    # 在 generate 期间设置全局 RNG（CPU/CUDA）为给定种子，退出后恢复
-    seed_to_use = None
-    if do_sample:
-        seed_to_use = int(torch.sum(input_ids).item() % (2**31 - 1)) if rng_seed is None else int(rng_seed)
-    with _seed_context(seed_to_use, device):
-        out = model.generate(
+    # 为本次调用创建“私有”随机数发生器；AB 两路用同一个 seed 即可复现且互不干扰
+    # 优先尝试“私有 generator”路径；若目标模型不支持，则回退到全局 RNG + 互斥锁
+    seed_to_use = _pick_seed(rng_seed, input_ids) if do_sample else None
+    gen = None
+    if do_sample and seed_to_use is not None:
+        gen = torch.Generator(device=input_ids.device)
+        gen.manual_seed(seed_to_use)
+
+    def _call_generate_with(gen_arg):
+        return model.generate(
             input_ids=input_ids,
             attention_mask=attn,
             do_sample=do_sample,
@@ -593,12 +579,39 @@ def _hf_generate_single(inputs: Dict[str, torch.Tensor],
             top_p=top_p,
             max_new_tokens=capped,
             logits_processor=final_lp,
-            # 不传 logits_warper，HF 会按 generation_config 内部创建
             stopping_criteria=stopping_criteria,
             pad_token_id=tokenizer.pad_token_id,
             eos_token_id=model.generation_config.eos_token_id,
+            generator=gen_arg,
             return_dict_in_generate=True,
         )
+
+    try:
+        out = _call_generate_with(gen)
+    except Exception as e:
+        msg = str(e)
+        # 仅当确认为“generator 未被模型接受”且允许回退时，启用安全回退
+        need_fallback = (
+            ALLOW_GENERATOR_FALLBACK
+            and do_sample
+            and seed_to_use is not None
+            # 更严格：必须同时包含两个核心提示词
+            and ("not used by the model" in msg)
+            and ("generator" in msg)
+        )
+        if not need_fallback:
+            raise
+        print("[server] generator not accepted by model; falling back to global RNG seeding")
+        # 回退：全局 RNG 受互斥锁保护，避免并行线程互相干扰
+        with _GLOBAL_RNG_LOCK:
+            try:
+                torch.manual_seed(seed_to_use)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(seed_to_use)
+            except Exception:
+                pass
+            out = _call_generate_with(None)
+    
     seqs = out.sequences  # [1, L+new]
     eos = model.generation_config.eos_token_id
     eos_ids = [eos] if isinstance(eos, int) else [int(x) for x in (eos or [])]
@@ -607,61 +620,6 @@ def _hf_generate_single(inputs: Dict[str, torch.Tensor],
     comp = new_lens[0]
     total = prompt_len + comp
     return text, prompt_len, comp, total, reasons[0]
-
-@torch.inference_mode()
-def _hf_generate_parallel(inputs: Dict[str, torch.Tensor],
-                          lp_internal: Optional[LogitsProcessorList],
-                          lp_external: Optional[LogitsProcessorList],
-                          temperature: float,
-                          top_p: float,
-                          max_new_tokens: int,
-                          do_sample: bool,
-                          rng_seed: Optional[int]) -> tuple[str, str, int, int, int, List[str]]:
-    device = next(model.parameters()).device
-    input_ids = inputs["input_ids"].to(device)
-    attn = inputs.get("attention_mask", None)
-    if attn is None:
-        attn = torch.ones_like(input_ids, dtype=torch.long, device=device)
-    else:
-        attn = attn.to(device=device, dtype=torch.long)
-    # batch=2
-    input_b2 = input_ids.repeat(2, 1).contiguous()
-    attn_b2 = attn.repeat(2, 1).contiguous()
-    prompt_len = int(input_ids.shape[1])
-    capped = _cap_max_new_tokens(prompt_len, int(max_new_tokens or 0))
-    if capped <= 0:
-        return "", "", prompt_len, 0, prompt_len, ["stop", "stop"]
-    do_sample, temperature, top_p = normalize_sampling_args(do_sample, temperature, top_p)
-    _, hf_lp, _, stopping_criteria = _build_hf_components(prompt_len, do_sample, temperature, top_p, capped)
-    router = BatchRouteProcessor(lp_internal, lp_external, external_index=1)
-    final_lp = LogitsProcessorList(list(hf_lp) + [router])
-    seed_to_use = None
-    if do_sample:
-        seed_to_use = int(torch.sum(input_ids).item() % (2**31 - 1)) if rng_seed is None else int(rng_seed)
-    with _seed_context(seed_to_use, device):
-        out = model.generate(
-            input_ids=input_b2,
-            attention_mask=attn_b2,
-            do_sample=do_sample,
-            temperature=temperature,
-            top_p=top_p,
-            max_new_tokens=capped,
-            logits_processor=final_lp,
-            # 不传 logits_warper，HF 会按 generation_config 内部创建
-            stopping_criteria=stopping_criteria,
-            pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=model.generation_config.eos_token_id,
-            return_dict_in_generate=True,
-        )
-    seqs = out.sequences  # [2, L+new]
-    eos = model.generation_config.eos_token_id
-    eos_ids = [eos] if isinstance(eos, int) else [int(x) for x in (eos or [])]
-    new_lens, reasons = _count_new_and_reason(seqs, prompt_len, capped, eos_ids, tokenizer.pad_token_id)
-    texts = tokenizer.batch_decode(seqs[:, prompt_len:], skip_special_tokens=True)
-    prompt_tok = prompt_len
-    comp_sum = int(new_lens[0] + new_lens[1])
-    total_tok = prompt_tok + comp_sum
-    return texts[0], texts[1], prompt_tok, comp_sum, total_tok, reasons
 
 @app.post("/v1/chat/completions")
 async def chat(req: ChatRequest) -> Dict[str, Any]:
@@ -687,25 +645,50 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
         if REQUIRE_EXTERNAL_IN_PARALLEL and not req.external_processor_names:
             raise HTTPException(status_code=400, detail="parallel=True 需要提供 external_processor_names 列表（可通过环境变量 REQUIRE_EXTERNAL_IN_PARALLEL=0 关闭此限制）")
 
-        # 组装“仅内置链”（作为基准）与“仅外置链”（追加在基准之上）
-        lp_internal = _resolve_lp_list(
+        # 组装两套“仅内置链”（相互独立的克隆）与一套“外置链”（可为空）
+        lp_internal_for_internal = _resolve_lp_list(
             internal_names=req.internal_processor_names,
             external_names=None,
             mode="internal_only"
         )
-        lp_external = _resolve_lp_list(   # 只拿“外置”链；允许 None
+        lp_internal_for_both = _resolve_lp_list(
+            internal_names=req.internal_processor_names,
+            external_names=None,
+            mode="internal_only"
+        )
+        lp_external = _resolve_lp_list(
             internal_names=None,
             external_names=req.external_processor_names,
             mode="any",
             external_params=req.external_processor_params
         )
 
+        # 合成“内置+外置”的处理器链（保持顺序：先内置，后外置）
+        if lp_internal_for_both is None and lp_external is None:
+            lp_both = None
+        elif lp_internal_for_both is None:
+            lp_both = lp_external
+        elif lp_external is None:
+            lp_both = lp_internal_for_both
+        else:
+            lp_both = LogitsProcessorList(list(lp_internal_for_both) + list(lp_external))
+
+        # 用“同一个 seed”分别做两次独立 generate，确保差异只来自外置处理器
         try:
-            text_internal, text_both, prompt_tok, comp_tok_sum, total_tok, reasons = await asyncio.to_thread(
-                _hf_generate_parallel,
+            text_internal, prompt_tok_0, comp_tok_0, total_tok_0, fr_internal = await asyncio.to_thread(
+                _hf_generate_single,
                 inputs,
-                lp_internal,
-                lp_external,
+                lp_internal_for_internal,
+                req.temperature,
+                req.top_p,
+                req.max_tokens,
+                req._do_sample,
+                req.rng_seed,
+            )
+            text_both, prompt_tok_1, comp_tok_1, total_tok_1, fr_both = await asyncio.to_thread(
+                _hf_generate_single,
+                inputs,
+                lp_both,
                 req.temperature,
                 req.top_p,
                 req.max_tokens,
@@ -721,37 +704,70 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
                 pass
             raise HTTPException(status_code=503, detail="generation_error: cuda_oom") from e
         except Exception as e:
-            # 统一转换为 500，避免栈追踪暴露
             raise HTTPException(status_code=500, detail=f"generation_error: {e.__class__.__name__}: {e}") from e
-        
-        # 逐路 finish_reason：基于 capped 与是否触顶长度（详见 _count_new_and_reason）
-        fr_internal, fr_both = reasons[0], reasons[1]
 
-        return {
-            "id": f"chatcmpl-{int(time.time()*1000)}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": req.model,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": text_internal},
-                    "finish_reason": fr_internal,
-                    "variant": "internal_only"
-                },
-                {
-                    "index": 1,
-                    "message": {"role": "assistant", "content": text_both},
-                    "finish_reason": fr_both,
-                    "variant": "internal_plus_external"
-                }
-            ],
-            "usage": {
-                "prompt_tokens": prompt_tok,
-                "completion_tokens": comp_tok_sum,
-                "total_tokens": total_tok
+        if USAGE_PER_CHOICE:
+            # 新口径：每个 choice 自带 usage；并行模式下不再返回顶层 usage
+            return {
+                "id": f"chatcmpl-{int(time.time()*1000)}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": req.model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": text_internal},
+                        "finish_reason": fr_internal,
+                        "variant": "internal_only",
+                        "usage": {
+                            "prompt_tokens": int(prompt_tok_0),
+                            "completion_tokens": int(comp_tok_0),
+                            "total_tokens": int(total_tok_0),
+                        },
+                    },
+                    {
+                        "index": 1,
+                        "message": {"role": "assistant", "content": text_both},
+                        "finish_reason": fr_both,
+                        "variant": "internal_plus_external",
+                        "usage": {
+                            "prompt_tokens": int(prompt_tok_1),
+                            "completion_tokens": int(comp_tok_1),
+                            "total_tokens": int(total_tok_1),
+                        },
+                    },
+                ],
             }
-        }
+        else:
+            # 旧口径：合并统计（与之前行为完全一致）
+            prompt_tok = int(prompt_tok_0)
+            comp_tok_sum = int(comp_tok_0 + comp_tok_1)
+            total_tok = int(prompt_tok + comp_tok_sum)
+            return {
+                "id": f"chatcmpl-{int(time.time()*1000)}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": req.model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": text_internal},
+                        "finish_reason": fr_internal,
+                        "variant": "internal_only"
+                    },
+                    {
+                        "index": 1,
+                        "message": {"role": "assistant", "content": text_both},
+                        "finish_reason": fr_both,
+                        "variant": "internal_plus_external"
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": prompt_tok,
+                    "completion_tokens": comp_tok_sum,
+                    "total_tokens": total_tok
+                }
+            }
 
     # 非并行：使用纯 generate（batch=1），仅拼接 **你的内置链**（与并行 internal-only 对齐）
     lp_internal_only = _resolve_lp_list(

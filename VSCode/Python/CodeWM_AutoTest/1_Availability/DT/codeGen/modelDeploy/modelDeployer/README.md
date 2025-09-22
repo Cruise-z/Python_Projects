@@ -50,12 +50,12 @@ curl --noproxy 127.0.0.1,localhost http://127.0.0.1:8000/v1/chat/completions \
     "model":"Qwen/Qwen2.5-Coder-32B-Instruct",
     "messages":[{"role":"user","content":"讲讲BFS与DFS差异并举例"}],
     "parallel": true,
-    "temperature":0.0,
+    "temperature":0.7,
     "rng_seed": 123456,
     "internal_processor_names":[],
     "external_processor_names":["sweet"],
     "external_processor_params": {
-      "sweet": {"gamma":0.7,"delta":2,"entropy_threshold":0.85},
+      "sweet": {"gamma":0.7,"delta":0.08,"entropy_threshold":0.85},
       "wllm":  {"gamma":0.4,"delta":1}
     },
     "max_tokens": 2048
@@ -68,7 +68,7 @@ curl --noproxy 127.0.0.1,localhost http://127.0.0.1:8000/v1/chat/completions \
   -d '{
     "model":"Qwen/Qwen2.5-Coder-32B-Instruct",
     "messages":[{"role":"user","content":"讲讲BFS与DFS差异并举例"}],
-    "temperature": 0,
+    "temperature": 0.7,
     "rng_seed": 123456,
     "max_tokens": 2048
   }' | jq .

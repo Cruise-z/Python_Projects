@@ -56,7 +56,7 @@ async def main():
         pass
     
     xargs = {
-        "temperature": 0.0,
+        "temperature": 0.7,
         "max_tokens": 4096,
         "parallel": True,
         "rng_seed": 123456,
