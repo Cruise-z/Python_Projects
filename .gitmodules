@@ -1,0 +1,3 @@
+[submodule "VSCode/Python/CodeWM_AutoTest/1_Availability/DT/codeGen/MetaGPT/workspace/snakeGame/java/java_snake_game"]
+	path = VSCode/Python/CodeWM_AutoTest/1_Availability/DT/codeGen/MetaGPT/workspace/snakeGame/java/java_snake_game
+	url = git://github.com/Cruise-z/java_snake_game
