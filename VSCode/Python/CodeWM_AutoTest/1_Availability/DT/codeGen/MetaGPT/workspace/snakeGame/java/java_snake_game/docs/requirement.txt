@@ -1,0 +1,159 @@
+
+Team Master Brief — Java Snake (STRICT 3-file repository)
+
+== GLOBAL HARD RULES (all roles must comply) ==
+
+1. Goal: Build a tiny Java Swing “Snake” game.
+2. Language: Java 11 only.
+3. Build tool: Maven only.
+4. Package name: correct
+5. Java 11 **syntax only**. Do **NOT** use features introduced **after** Java 11:
+   - No switch **expressions** (`case ->`, `yield`).
+   - No text blocks (`"""`), no records (`record`), no sealed classes (`sealed`/`permits`),
+     no pattern matching for `instanceof`, no preview features or flags.
+   - Prefer **explicit types** (avoid `var` in public APIs); code must compile with `-source 11 -target 11`
+     **without** `--enable-preview`.
+
+Final repository MUST contain EXACTLY these three files (no more, no less, exact paths):
+1. pom.xml
+2. src/main/java/correct/SnakeGame.java
+3. src/test/java/correct/SnakeGameTest.java
+
+WARN:
+Allowed paths WHITELIST (no exceptions): {"pom.xml","src/main/java/correct/SnakeGame.java","src/test/java/correct/SnakeGameTest.java"}.
+Any other path or file is FORBIDDEN (e.g., "src/main/java/com/project/*", extra classes like "Point.java", additional resources, or alternative packages).
+The only valid package directory is "correct" (NOT "com/project" or any other).
+
+Single-file app logic: ALL gameplay and GUI logic (board, movement, food, collisions, growth, scoring, restart, render, loop) MUST live inside SnakeGame.java. You may use inner/non-public helper classes in the SAME file. SnakeGame MUST include a public static void main(String[] args).
+
+Tests: SnakeGameTest.java contains all tests (can be minimal) and ALSO has a main method to run tests directly.
+
+Run command (MUST launch a GUI successfully):
+mvn -q -DskipTests exec:java -Dexec.mainClass=correct.SnakeGame
+
+NO extra files/folders (no README, resources, configs, scripts, notebooks, etc.). If more helpers seem necessary, embed them as inner classes inside SnakeGame.java.
+
+UI: Swing (JFrame + JPanel). Arrow keys control. Score visible. “Game Over” dialog with restart.
+Code: clean, readable, no TODOs/dead code, minimal but sufficient comments.
+
+== FUNCTIONAL REQUIREMENTS (complete & aligned with your list) ==
+• Game Board:
+    Create a grid-based game board.
+    Define grid dimensions (e.g., 20×20).
+    Display the grid on screen via Swing painting.
+• Snake Initialization:
+    Place the snake on the board.
+    Define initial length and starting position.
+    Choose an initial direction (e.g., right).
+• Snake Movement:
+    Implement arrow-key controls.
+    Ensure continuous movement on a fixed tick.
+    Update the snake’s position each tick.
+• Food Generation:
+    Generate food at random grid cells.
+    Ensure food never appears on the snake body.
+• Collision Handling:
+    Detect wall (boundary) collisions.
+    Detect self-collisions (head with body).
+    Detect head-on-food collisions.
+• Snake Growth:
+    Grow when eating food.
+    Append a new segment at the tail.
+• Score Display:
+    Maintain a score counter.
+    Display current score on screen.
+• Game Over Condition:
+    Game over on wall or self collision.
+    Show a “Game Over” message/dialog.
+    Allow restart WITHOUT quitting the app (reset state cleanly).
+• Graphics & UI:
+    Use Swing graphics to render snake and food (no external assets).
+    Provide clear instructions and score display.
+• Animations & Effects:
+    Use javax.swing.Timer (or equivalent) for a smooth tick/animation.
+    Provide basic visual feedback for collisions and eating (simple, not flashy).
+
+== PRODUCT MANAGER (PM) — Output: concise PRD (plain text) ==
+
+Deliver a short PRD with:
+
+1. Goal & user story (1–2 sentences).
+2. Acceptance criteria (checklist the runner can verify):
+3. The run command starts a window: mvn -q -DskipTests exec:java -Dexec.mainClass=correct.SnakeGame
+4. Arrow keys move the snake; eating food grows length and increases score.
+5. Hitting wall/self pops “Game Over” AND restart works without exiting.
+6. Package is correct; builds with **Java 11** (no preview flags); repository contains **EXACTLY** the 3 files. 
+7. **Java 11 syntax compliance:** code contains **no** `case ->`/`yield`, `"""`, `record`, `sealed`, or pattern-matching `instanceof`.
+8. Non-goals (e.g., networking, assets/sound, advanced levels, high-end effects). 
+9. Deliverables (restate the exact three paths).
+(Keep PRD short; do NOT expand scope; restate the “3-file only” rule.)
+
+== ARCHITECT — Output: one-page system design (plain text) ==
+
+Provide at most one page describing:
+1. Class layout INSIDE SnakeGame.java: one public class SnakeGame plus non-public helpers (inner or package-private) such as BoardPanel, Snake, Food, Direction enum, etc. ALL inside the same file.
+2. Event & loop: javax.swing.Timer tick (e.g., 100 ms), key listeners, repaint pipeline.
+3. Data model: snake body list, direction enum, grid size (e.g., 20×20), cell size, score counter.
+4. Collision rules & restart flow (state reset).
+5. Testing seam: how SnakeGameTest.java (also with main) performs minimal checks (headless or simple assertions).
+6. Confirm **Java 11-only syntax** and package `correct`. No additional source files.
+7. **Explicitly require classic `switch` statements** (`case:` + `break`) for direction updates; **do not** use switch expressions (`case ->`) or `yield`.
+Optional: tiny ASCII structure/sequence diagram.
+
+== PROJECT MANAGER (PMgr) — Output: STRICT JSON ONLY (no prose) ==
+Output exactly ONE JSON object with these keys (no extras, same order):
+
+{
+    "Required packages": [],
+    "Logic Analysis": [
+        ["pom.xml", "Maven compiler plugin (source/target/release=11), Enforcer requires Java 11, exec-maven-plugin runs correct.SnakeGame; **no preview flags**"],
+        ["src/main/java/correct/SnakeGame.java", "All game logic + GUI + main()"],
+        ["src/test/java/correct/SnakeGameTest.java", "Minimal tests + main()"]
+    ],
+    "Task list": [
+        "pom.xml",
+        "src/main/java/correct/SnakeGame.java",
+        "src/test/java/correct/SnakeGameTest.java"
+    ],
+    "Full API spec": "",
+    "Shared Knowledge": "All helper types live inside SnakeGame.java as inner or package-private classes. No extra files. **Java 11-only syntax**: use classic switch (no '->'/'yield'); no text blocks/records/sealed/pattern-matching; no preview flags.",
+    "Anything UNCLEAR": ""
+}
+
+Rules:
+
+1. Task list MUST contain exactly the three paths above in that order.
+2. Do NOT output anything other than the JSON object.
+3. STRICT VALIDATION for PMgr:
+    - The "Task list" value MUST be EXACTLY the following array (string-equal, same order, same casing):
+    ["pom.xml","src/main/java/correct/SnakeGame.java","src/test/java/correct/SnakeGameTest.java"]
+    - Do NOT introduce any additional items (e.g., "Point.java") or alternate directories (e.g., "com/project").
+    - If upstream planning suggests extra files, OMIT them and keep the exact 3-file list.
+
+== ENGINEER — Implementation constraints (for context) ==
+
+1. Generate ONLY the three files; SnakeGame.java contains everything and has main; SnakeGameTest.java has minimal tests with main.
+2. Swing only; Maven pom.xml sets **Java 11** (maven-compiler-plugin with `<source>11</source><target>11</target><release>11</release>`), Enforcer requires Java 11; **no** `--enable-preview`. Use exec-maven-plugin to run `correct.SnakeGame`. 
+3. After generation, the run command must succeed and show the GUI.
+4. If helpers are needed, embed them INSIDE SnakeGame.java as inner/package-private classes; do NOT create new files.
+5. **Use classic `switch` statements** for direction/logic; **do not** use switch expressions (`case ->`) or `yield`. Avoid text blocks/records/sealed/pattern-matching. Prefer explicit types over `var`.
+
+== COMPLIANCE GATES (self-check before output) ==
+
+1. Repository contains EXACTLY the three files: pom.xml, src/main/java/correct/SnakeGame.java, src/test/java/correct/SnakeGameTest.java.
+2. Package name is correct.
+3. Maven + **Java 11** build passes; run command launches the GUI; build uses no preview flags. 
+4. No extra modules/folders/resources/scripts/READMEs/notebooks.
+5. All functional items are satisfied: grid board, init, movement, random food (non-overlapping), collisions (wall/self/food), growth, scoring, Game Over + restart, Swing rendering, timer animation, basic visual feedback. 
+6. **Java 11 syntax compliance check** (must be true):
+   - Source contains **no** `case ->` or `yield` in `switch`.
+   - Source contains **no** `"""`, `record`, `sealed`, `permits`, or pattern-matching `instanceof`.
+   - Compiles with `-source 11 -target 11` **without** `--enable-preview`.
+7. PMgr JSON compliance: "Task list" EXACTLY equals ["pom.xml","src/main/java/correct/SnakeGame.java","src/test/java/correct/SnakeGameTest.java"]; any deviation is INVALID and must be corrected before handing off to Engineer. 
+
+== NOTES TO ROLES ==
+
+1. If anyone believes a fourth file is needed, DO NOT add it—fold helpers into SnakeGame.java.
+2. Keep outputs minimal and executable; avoid verbose documents.
+3. Never change the package or directories to "com.project" (or similar). Always use package "correct" and the exact paths above.
+4. Treat any suggestion to use **Java 12+** features as out-of-scope; keep everything Java 11-compatible. '''

@@ -1,0 +1,12 @@
+
+sequenceDiagram
+    participant SG as SnakeGame
+    SG->>SG: main(args)
+    SG->>SG: initializeGame()
+    SG->>SG: startGame()
+    loop Game Loop
+        SG->>SG: move()
+        SG->>SG: checkCollision()
+        SG->>SG: updateScore()
+    end
+    SG->>SG: restartGame()
