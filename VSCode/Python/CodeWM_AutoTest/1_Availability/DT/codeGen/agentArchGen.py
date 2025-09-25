@@ -29,24 +29,11 @@ from metagpt.roles.architect import Architect
 from metagpt.roles.project_manager import ProjectManager
 from metagpt.team import Team
 from metagpt.environment import Environment
-
-# # 可选：附加 vLLM 扩展字段
-# # 注意：vllm_xargs 里只放“标量”，嵌套 dict 用 JSON 字符串
-# vllm_xargs = {
-#     "wm_compare": True,            # 方案A：并行两路（base vs. wm）
-#     "apply_order": "sweet",         # 由处理器读取（已做“先走一步再分路”的逻辑）
-#     "exclude_special": True,
-#     "wllm_impl":  "regWM.libWM.watermark:WatermarkLogitsProcessor",
-#     "wllm_kwargs": json.dumps({"gamma": 0.5, "delta": 10}),
-#     "sweet_impl": "regWM.libWM.sweet:SweetLogitsProcessor",
-#     "sweet_kwargs": json.dumps({"gamma": 0.5, "delta": 30, "entropy_threshold": 0.7}),
-#     # 可选：shared_kwargs 也可传，仍需 JSON 字符串
-#     # "shared_kwargs": json.dumps({"some_shared_flag": True}),
-# }
         
 async def main():
     
     # 1) 加载两套配置（与官方示例一致）
+    #TODO: 该脚本要在生成代码的本地模型未部署的环境下运行
     local_vllm = Config.default()                      # 来自 ~/.metagpt/config2.yaml
     gpt_openai = Config.from_home("openai.yaml")       # 来自 ~/.metagpt/local_vllm.yaml
     try:
@@ -56,22 +43,6 @@ async def main():
             local_vllm.llm.request_timeout = max(getattr(local_vllm.llm, "request_timeout", 0) or 0, 1200)
     except Exception:
         pass
-    
-    gpt_openai.update_via_cli(
-        project_path="", 
-        project_name="", 
-        inc=False,
-        reqa_file="", 
-        max_auto_summarize_code=0
-    )
-    ctx = Context(config=gpt_openai)
-    local_vllm.update_via_cli(
-        project_path="", 
-        project_name="", 
-        inc=False,
-        reqa_file="", 
-        max_auto_summarize_code=0
-    )
     
     xargs = {
         "temperature": 0.7,
@@ -94,21 +65,13 @@ async def main():
     # eng = DataInterpreter(config=local_vllm)
 
     team = Team(
-        context=ctx,
         env=Environment(desc=prompts.java.snakegame.desc), 
         roles=[pm, arch, pmgr, eng]
     )
     idea = prompts.java.snakegame.idea
     
-    try:
-        await team.run(n_round=3, idea=idea)   # 你的计划：Engineer 尚未写代码
-    finally:
-        stg = Path("/home/zhaorz/project/CodeWM/MetaGPT/workspace") / "team"
-        stg.parent.mkdir(parents=True, exist_ok=True)
-        team.serialize(stg_path=stg)
-        print("✅ checkpoint saved at:", stg)
-        print("repo.root      =", getattr(ctx.repo, "root", None))
-        print("repo.workspace =", getattr(ctx.repo, "workspace", None))
+    await team.run(n_round=5, idea=idea)
+    
     
 if __name__ == "__main__":
     asyncio.run(main())

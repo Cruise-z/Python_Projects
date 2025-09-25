@@ -27,20 +27,6 @@ from metagpt.roles.architect import Architect
 from metagpt.roles.project_manager import ProjectManager
 from metagpt.team import Team
 from metagpt.environment import Environment
-
-# # 可选：附加 vLLM 扩展字段
-# # 注意：vllm_xargs 里只放“标量”，嵌套 dict 用 JSON 字符串
-# vllm_xargs = {
-#     "wm_compare": True,            # 方案A：并行两路（base vs. wm）
-#     "apply_order": "sweet",         # 由处理器读取（已做“先走一步再分路”的逻辑）
-#     "exclude_special": True,
-#     "wllm_impl":  "regWM.libWM.watermark:WatermarkLogitsProcessor",
-#     "wllm_kwargs": json.dumps({"gamma": 0.5, "delta": 10}),
-#     "sweet_impl": "regWM.libWM.sweet:SweetLogitsProcessor",
-#     "sweet_kwargs": json.dumps({"gamma": 0.5, "delta": 30, "entropy_threshold": 0.7}),
-#     # 可选：shared_kwargs 也可传，仍需 JSON 字符串
-#     # "shared_kwargs": json.dumps({"some_shared_flag": True}),
-# }
         
 async def main():
     
